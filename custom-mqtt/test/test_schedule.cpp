@@ -69,6 +69,27 @@ int main() {
   CHECK(!ykRuleValid(&badMask));
   CHECK(!ykRuleValid(NULL));
 
+  // 错过规则补执行：最近一次到期
+  long ago = -1;
+  CHECK(ykParseSchedule("0730,1,127;1730,0,127", r, 4) == 2);
+  CHECK(ykScheduleLastDue(r, 2, 3, 7, 40, &ago) == 1 && ago == 10);     // 周三 07:40 → 10 分钟前开
+  CHECK(ykScheduleLastDue(r, 2, 3, 18, 0, &ago) == 0 && ago == 30);     // 周三 18:00 → 30 分钟前关
+  CHECK(ykScheduleLastDue(r, 2, 3, 6, 0, &ago) == 0 && ago == 750);     // 周三 06:00 → 昨天 17:30 关
+  CHECK(ykScheduleLastDue(r, 2, 3, 7, 30, &ago) == 1 && ago == 0);      // 当前分钟算到期
+  // 工作日掩码：周一 06:00 往回找 → 上周五 17:30
+  CHECK(ykParseSchedule("0730,1,31;1730,0,31", r, 4) == 2);
+  CHECK(ykScheduleLastDue(r, 2, 1, 6, 0, &ago) == 0 && ago == (2 * 1440 + 750));
+  // 仅周日 08:00，当前周日 07:00 → 上周日（7 天前）
+  CHECK(ykParseSchedule("0800,1,64", r, 4) == 1);
+  CHECK(ykScheduleLastDue(r, 1, 0, 7, 0, &ago) == 1 && ago == (7 * 1440 - 60));
+  // 空表
+  CHECK(ykParseSchedule("", r, 4) == 0);
+  CHECK(ykScheduleLastDue(r, 4, 3, 12, 0, &ago) == -1);
+  // 同一时刻两条：后者生效（与 ykScheduleDue 一致）
+  CHECK(ykParseSchedule("0900,1,127;0900,0,127", r, 4) == 2);
+  CHECK(ykScheduleLastDue(r, 2, 2, 10, 0, &ago) == 0 && ago == 60);
+  CHECK(ykScheduleLastDue(r, 2, 7, 10, 0, &ago) == -1);  // 非法 wday
+
   if (fails == 0) printf("ALL PASS\n");
   return fails ? 1 : 0;
 }

@@ -204,3 +204,42 @@ static inline int ykScheduleDue(const YkRule* rules, int n, int wday, int hour, 
   }
   return result;
 }
+
+// 断电/未对时期间错过的规则补执行：找出"当前时刻之前（含当前分钟）最近一次到期"的规则。
+// 回看 7 天（一周内每条规则至少到期一次，只要掩码非空）。
+// 入参为本地时间（tm_wday 0=周日）。找到返回动作（0/1）并写 *minutesAgo；无启用规则返回 -1。
+// 同一时刻多条时与 ykScheduleDue 一致：数组中靠后的一条生效。
+static inline int ykScheduleLastDue(const YkRule* rules, int n, int wday, int hour, int minute,
+                                    long* minutesAgo) {
+  if (rules == NULL || wday < 0 || wday > 6 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return -1;
+  }
+  const long nowMin = (long)hour * 60 + minute;
+  long best = -1;
+  int result = -1;
+  for (int i = 0; i < n; i++) {
+    if (!rules[i].enabled) {
+      continue;
+    }
+    const long ruleMin = (long)rules[i].hour * 60 + rules[i].minute;
+    for (int back = 0; back <= 7; back++) {
+      long ago = (long)back * 1440 + (nowMin - ruleMin);
+      if (ago < 0) {
+        continue;  // 今天还没到
+      }
+      int d = ((wday - back) % 7 + 7) % 7;
+      int bit = (d + 6) % 7;
+      if ((rules[i].weekMask >> bit) & 1) {
+        if (best < 0 || ago <= best) {
+          best = ago;
+          result = rules[i].action;
+        }
+        break;  // 该规则最近一次已找到
+      }
+    }
+  }
+  if (result >= 0 && minutesAgo != NULL) {
+    *minutesAgo = best;
+  }
+  return result;
+}

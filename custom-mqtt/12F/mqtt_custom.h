@@ -27,7 +27,13 @@ static inline int ykParseSwitchPayload(const uint8_t* p, unsigned int len) {
       if (n == 0) {
         continue;  // 跳过前导空白
       }
-      break;       // 正文后的空白即结束
+      // 正文后遇到空白：其后只允许空白，否则整条无法识别（防 "ON garbage" 被当成 ON）
+      for (unsigned int j = i + 1; j < len; j++) {
+        if (!isspace((unsigned char)p[j])) {
+          return -1;
+        }
+      }
+      break;
     }
     if (n >= sizeof(tmp) - 1) {
       return -1;   // 过长不可能是合法指令
@@ -54,4 +60,23 @@ static inline int ykBuildTopic(char* buf, size_t bufSize, const char* id, const 
     return -1;
   }
   return n;
+}
+
+// 设备 ID 合法性：用作 MQTT topic 段与 JSON/HTML 输出，只允许 [A-Za-z0-9_-]，长度 1..32。
+// 拒绝 '/', '+', '#'（会让订阅变成通配）以及引号、尖括号等（会破坏 /status JSON、维护页 XSS）。
+static inline bool ykDeviceIdValid(const char* id) {
+  if (id == NULL) {
+    return false;
+  }
+  size_t n = strlen(id);
+  if (n == 0 || n > 32) {
+    return false;
+  }
+  for (size_t i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)id[i];
+    if (!(isalnum(c) || c == '_' || c == '-')) {
+      return false;
+    }
+  }
+  return true;
 }
