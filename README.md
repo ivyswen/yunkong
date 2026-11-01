@@ -15,6 +15,7 @@
 | `bin/ykyc001_v1_compiled.bin` | v1 本地编译产物，457,520 B |
 | `bin/author/` | 作者发布的原版 bin（v1 / v2 / esp01_v2） |
 | `FLASHING.md` | 刷机说明：备份原厂、接线、刷入、配网 |
+| `custom-mqtt/` | 自定义 MQTT 变体固件：配网页可填自己的 broker，脱离作者 OneNET（见其 README）；产物 `bin/ykyc001_v2_custom_mqtt.bin` |
 
 ## 硬件要点
 
