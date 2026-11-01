@@ -3,8 +3,8 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
-/** OneNET MQTT 密码串超长，默认 256 会导致 CONNECT 失败 */
-#define MQTT_MAX_PACKET_SIZE 512
+// OneNET MQTT 密码串超长，默认 256 会导致 CONNECT 失败：缓冲区由 setup() 里的
+// mqttclient.setBufferSize(512) 设定（在 .ino 里 #define MQTT_MAX_PACKET_SIZE 对已单独编译的库无效）
 #include <PubSubClient.h>
 
 #define eeshow
@@ -80,8 +80,8 @@ BearSSL::X509List mqttcert(mqtt_ca_crt);
 /** 断电保持继电器逻辑状态；偏移避开 EEPROM 低地址，减少与库/SDK 冲突 */
 static const uint8_t kPersistMagic = 0xA7;
 static const int kPersistEepromOffset = 64;
-// 80 → 192：容纳偏移 128 起的时刻表区（见 schedule 存储登记）。副作用：EEPROM 镜像位置
-// 随 size 变化，原版存过的继电器状态首次启动读不到（magic 不符走默认），属可接受的一次性迁移。
+// 80 → 192：容纳偏移 128 起的时刻表区（见 schedule 存储登记）。ESP8266 EEPROM 固定从同一
+// flash 扇区起始读写，size 只决定镜像长度，原版在偏移 64 存的继电器状态升级后仍可读到。
 static const int kPersistEepromSize = 192;
 
 //设备ID
@@ -128,6 +128,8 @@ unsigned long mqttReconnectDelayMs = 2000;
 const unsigned long MQTT_RECONNECT_MIN_MS = 2000;
 const unsigned long MQTT_RECONNECT_MAX_MS = 60000;
 bool clockReady = false;
+// 系统时间"已对时"判定阈值（2023-11-14），OneNET 证书校验与时刻表共用
+static const time_t kClockValidEpoch = 1700000000;
 /** 订阅成功后短时间内不执行下行改继电器，避免 retained/排队包误动作 */
 static unsigned long mqttIgnoreRelayDownlinkUntil = 0;
 
@@ -153,7 +155,7 @@ void setClock()
   Serial.print("Waiting for NTP time sync: ");
   time_t now = time(nullptr);
   unsigned long started = millis();
-  while (now < 8 * 3600 * 2)
+  while (now < kClockValidEpoch)
   {
     if (millis() - started > 25000UL) {
       Serial.println(" timeout");
@@ -170,6 +172,16 @@ void setClock()
   Serial.print("Current time: ");
   Serial.print(asctime(&timeinfo));
   clockReady = true;
+}
+
+// 继电器最后一次变化的时刻（Unix 分钟，0=未知/当时未对时），存偏移 66..69，与状态位同次 commit。
+// 用途：上电对时后判断"断电期间是否错过了时刻表规则"。
+uint32_t lastFlagChangeMin = 0;
+bool schedCatchupDone = false;
+
+static uint32_t nowEpochMinutesOrZero() {
+  time_t now = time(nullptr);
+  return now >= kClockValidEpoch ? (uint32_t)(now / 60) : 0;
 }
 
 void loadPersistedFlagState() {
@@ -192,6 +204,8 @@ void loadPersistedFlagState() {
     return;
   }
   flagState = v ? HIGH : LOW;
+  lastFlagChangeMin = (uint32_t)EEPROM.read(off + 2) | ((uint32_t)EEPROM.read(off + 3) << 8) |
+                      ((uint32_t)EEPROM.read(off + 4) << 16) | ((uint32_t)EEPROM.read(off + 5) << 24);
   EEPROM.end();
 }
 
@@ -200,8 +214,12 @@ void persistFlagState() {
   int off = kPersistEepromOffset;
   EEPROM.begin(kPersistEepromSize);
   if (EEPROM.read(off) != kPersistMagic || EEPROM.read(off + 1) != bit) {
+    lastFlagChangeMin = nowEpochMinutesOrZero();
     EEPROM.write(off, kPersistMagic);
     EEPROM.write(off + 1, bit);
+    for (int i = 0; i < 4; i++) {
+      EEPROM.write(off + 2 + i, (uint8_t)(lastFlagChangeMin >> (8 * i)));
+    }
     EEPROM.commit();
   }
   EEPROM.end();
@@ -212,6 +230,10 @@ void clearPersistedFlagState() {
   EEPROM.begin(kPersistEepromSize);
   EEPROM.write(off, 0);
   EEPROM.write(off + 1, 0);
+  for (int i = 0; i < 4; i++) {
+    EEPROM.write(off + 2 + i, 0);
+  }
+  lastFlagChangeMin = 0;
   EEPROM.write(0, 0);
   EEPROM.write(1, 0);
   EEPROM.commit();
@@ -248,20 +270,37 @@ void loadSchedule() {
   EEPROM.end();
 }
 
+// 只在内容有变化时 commit：retained 的 schedule/set 每次重连都会重投，避免反复擦写 flash 扇区
+static bool eepromPut(int addr, uint8_t v) {
+  if (EEPROM.read(addr) == v) {
+    return false;
+  }
+  EEPROM.write(addr, v);
+  return true;
+}
+
 void saveSchedule() {
   EEPROM.begin(kPersistEepromSize);
   int off = kSchedEepromOffset;
-  EEPROM.write(off, kSchedMagic);
-  EEPROM.write(off + 1, (uint8_t)tzOffsetHours);
+  bool dirty = false;
+  dirty |= eepromPut(off, kSchedMagic);
+  dirty |= eepromPut(off + 1, (uint8_t)tzOffsetHours);
   for (int i = 0; i < SCHED_MAX_RULES; i++) {
     int base = off + 2 + i * 5;
-    EEPROM.write(base, schedRules[i].enabled);
-    EEPROM.write(base + 1, schedRules[i].hour);
-    EEPROM.write(base + 2, schedRules[i].minute);
-    EEPROM.write(base + 3, schedRules[i].action);
-    EEPROM.write(base + 4, schedRules[i].weekMask);
+    // 空槽统一写全 0，避免残留字段让"同内容"比较失效
+    YkRule r = schedRules[i];
+    if (!r.enabled) {
+      r.hour = r.minute = r.action = r.weekMask = 0;
+    }
+    dirty |= eepromPut(base, r.enabled);
+    dirty |= eepromPut(base + 1, r.hour);
+    dirty |= eepromPut(base + 2, r.minute);
+    dirty |= eepromPut(base + 3, r.action);
+    dirty |= eepromPut(base + 4, r.weekMask);
   }
-  EEPROM.commit();
+  if (dirty) {
+    EEPROM.commit();
+  }
   EEPROM.end();
 }
 
@@ -280,22 +319,34 @@ int currentScheduleText(char* buf, size_t bufSize) {
   return ykFormatSchedule(schedRules, SCHED_MAX_RULES, buf, bufSize);
 }
 
+// 按当前 tzOffsetHours 设置本地时区并（重新）启动 SNTP。configTime 会同时更新 TZ，
+// 已对时后调用也会立刻让 localtime 换到新时区。
+void schedApplyTimezone() {
+  configTime(tzOffsetHours * 3600, 0, "ntp.aliyun.com", "cn.pool.ntp.org", "pool.ntp.org");
+  schedClockInit = true;
+  lastSchedNtpTry = millis();
+}
+
 // 时刻表对时：时间未就绪时每 60s 重发一次 SNTP 请求（非阻塞），就绪返回 true
 bool schedEnsureClock() {
-  if (time(nullptr) >= 1700000000) {
+  if (!schedClockInit) {
+    schedApplyTimezone();  // 首次进入即设时区，避免 TZ 停留在 UTC
+  }
+  if (time(nullptr) >= kClockValidEpoch) {
     return true;
   }
   if (!schedClockInit || millis() - lastSchedNtpTry > 60000UL) {
-    configTime(tzOffsetHours * 3600, 0, "ntp.aliyun.com", "cn.pool.ntp.org", "pool.ntp.org");
-    schedClockInit = true;
-    lastSchedNtpTry = millis();
+    schedApplyTimezone();
   }
   return false;
 }
 
 // 时刻表引擎：仅自定义 MQTT 模式。时间就绪后按本地分钟粒度判定，同一分钟只判一次。
+void scheduleCatchup(time_t now, const struct tm& ti);
+
+// 不检查 WiFi：对时一次后系统时钟自走，断网照常按表执行（SNTP 在联网时自动校准）。
 void scheduleLoop() {
-  if (!customMqtt || !wifipw.OK(true)) {
+  if (!customMqtt) {
     return;
   }
   if (!schedEnsureClock()) {
@@ -313,6 +364,10 @@ void scheduleLoop() {
   lastSchedMinute = minuteStamp;
   struct tm ti;
   localtime_r(&now, &ti);
+  if (!schedCatchupDone) {
+    schedCatchupDone = true;
+    scheduleCatchup(now, ti);
+  }
   int action = ykScheduleDue(schedRules, SCHED_MAX_RULES, ti.tm_wday, ti.tm_hour, ti.tm_min);
   if (action < 0) {
     return;
@@ -322,6 +377,33 @@ void scheduleLoop() {
   clearLocalRestore("schedule_due");
   updateFlagStart();
   persistFlagState();
+}
+
+// 上电后首次对时：若最近一次到期的规则晚于继电器最后一次变化（断电/未对时期间错过），补执行。
+// 最后变化时刻未知（0）时也补执行，以时刻表为准。
+void scheduleCatchup(time_t now, const struct tm& ti) {
+  long ago = -1;
+  int action = ykScheduleLastDue(schedRules, SCHED_MAX_RULES, ti.tm_wday, ti.tm_hour, ti.tm_min, &ago);
+  if (action < 0 || ago == 0) {
+    return;  // 无规则，或当前分钟到期（交给常规判定）
+  }
+  const uint32_t nowMin = (uint32_t)(now / 60);
+  uint32_t changeMin = lastFlagChangeMin;
+  if (changeMin > nowMin) {
+    changeMin = 0;  // 未来时刻 = 坏数据（如旧固件留下的 0xFF 擦除态），按未知处理
+  }
+  uint32_t dueMin = nowMin - (uint32_t)ago;
+  if (changeMin != 0 && changeMin >= dueMin) {
+    return;  // 规则之后已有手动/远程改动，以改动为准
+  }
+  int target = action ? HIGH : LOW;
+  Serial.printf("schedule catch-up (%ld min ago) -> %s\n", ago, action ? "ON" : "OFF");
+  if (flagState != target) {
+    flagState = target;
+    clearLocalRestore("schedule_catchup");
+    updateFlagStart();
+    persistFlagState();
+  }
 }
 
 /** OTA 首页，须先于 OTAbegin */
@@ -359,18 +441,19 @@ static const char otaIndexHtml[] PROGMEM =
     "function stopPolling(){if(pollTimer){clearTimeout(pollTimer);pollTimer=null;}}"
     "function ok(v){return '<span class=ok>'+v+' ✓</span>'}"
     "function err(v){return '<span class=err>'+v+' ✗</span>'}"
+    "function esc(v){return String(v).replace(/[&<>\"']/g,function(c){return '&#'+c.charCodeAt(0)+';'})}"
     "function fetchStatus(){"
     "var x=new XMLHttpRequest();x.open('GET','/status');x.timeout=4000;"
     "x.onload=function(){"
     "try{var s=JSON.parse(x.responseText);"
     "var h='<table>';"
     "h+='<tr><td>WiFi</td><td>'+(s.wifi_status==3?ok(s.wifi_str):err(s.wifi_str))+'</td></tr>';"
-    "h+='<tr><td>IP</td><td>'+(s.ip||'—')+'</td></tr>';"
+    "h+='<tr><td>IP</td><td>'+esc(s.ip||'—')+'</td></tr>';"
     "h+='<tr><td>MQTT</td><td>'+(s.mqtt_ready?ok('OK'):err('NO'))+'</td></tr>';"
     "h+='<tr><td>NTP</td><td>'+(s.clock_ready?ok('OK'):err('NO'))+'</td></tr>';"
     "h+='<tr><td>继电器</td><td>'+(s.flag_state==1?'开（蓝灯）':'关（红灯）')+'</td></tr>';"
     "h+='<tr><td>重连间隔</td><td>'+((s.reconnect_delay_ms||0)/1000)+'s</td></tr>';"
-    "h+='<tr><td>ClientID</td><td style=font-size:11px>'+(s.clientid||'—')+'</td></tr>';"
+    "h+='<tr><td>ClientID</td><td style=font-size:11px>'+esc(s.clientid||'—')+'</td></tr>';"
     "h+='</table>';"
     "document.getElementById('status').innerHTML=h;"
     "var sc=document.getElementById('sched');if(sc&&document.activeElement!==sc)sc.value=s.schedule||'';"
@@ -432,7 +515,9 @@ void handleScheduleSave() {
     }
   }
   saveSchedule();
-  schedClockInit = false;  // 时区可能已变，下一轮重新对时
+  if (customMqtt) {
+    schedApplyTimezone();  // 时区立即生效，无需重启
+  }
   lastSchedMinute = -1;
   if (customMqtt && mqttclient_state == 1) {
     publishSchedule();
@@ -440,6 +525,26 @@ void handleScheduleSave() {
   OTAserver.send(200, "text/html; charset=utf-8",
     "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>OK</title></head><body>"
     "<p>时刻表已保存。</p></body></html>");
+}
+
+// JSON 字符串转义（clientid 在 OneNET 模式下未经白名单校验）
+static String jsonEscape(const String& in) {
+  String out;
+  out.reserve(in.length() + 8);
+  for (unsigned int i = 0; i < in.length(); i++) {
+    char c = in[i];
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += c;
+    } else if ((unsigned char)c < 0x20) {
+      char tmp[8];
+      snprintf(tmp, sizeof(tmp), "\\u%04x", (unsigned char)c);
+      out += tmp;
+    } else {
+      out += c;
+    }
+  }
+  return out;
 }
 
 void handleStatus() {
@@ -450,7 +555,7 @@ void handleStatus() {
   json += ",\"mqtt_ready\":" + String(mqttclient_state == 1 ? "true" : "false");
   json += ",\"clock_ready\":" + String(clockReady ? "true" : "false");
   json += ",\"flag_state\":" + String(flagState == HIGH ? "1" : "0");
-  json += ",\"clientid\":\"" + CLIENTID + "\"";
+  json += ",\"clientid\":\"" + jsonEscape(CLIENTID) + "\"";
   json += ",\"mqtt_mode\":\"" + String(customMqtt ? "custom" : "onenet") + "\"";
   char schedBuf[128];
   currentScheduleText(schedBuf, sizeof(schedBuf));
@@ -545,6 +650,11 @@ void receivedCallback(char* topicname, uint8_t* payload, unsigned int length)
         clearLocalRestore("custom_mqtt_set");
         updateFlagStart();
         persistFlagState();
+      }
+      // 清掉 broker 上可能 retained 的 set：否则断线重连会重投旧指令，抵消期间的时刻表/按键动作。
+      // 空载荷回来时解析为 -1 被忽略，不会循环。状态以 retained 的 state 主题为准。
+      if (length > 0) {
+        mqttclient.publish(tSet, (const uint8_t*)"", 0, true);
       }
       return;
     }
@@ -958,7 +1068,13 @@ void setup()
   if (customMqtt) {
     int p = portStr.toInt();
     MQTT_PORT_N = (p > 0 && p <= 65535) ? p : 1883;
-    if (CLIENTID.length() == 0 || CLIENTID == "NULL") {
+    CLIENTID.trim();
+    // 设备 ID 进 topic：只允许 [A-Za-z0-9_-]，含 / + # 等会让订阅变通配，不合规一律回落芯片 ID
+    if (CLIENTID == "NULL" || !ykDeviceIdValid(CLIENTID.c_str())) {
+      if (CLIENTID.length() > 0 && CLIENTID != "NULL") {
+        Serial.print("invalid device id, fallback: ");
+        Serial.println(CLIENTID);
+      }
       CLIENTID = "ykyc-" + String(ESP.getChipId(), HEX);
     }
     Serial.print("custom mqtt -> ");

@@ -11,7 +11,7 @@
 
 | 文件 | 适合 |
 |---|---|
-| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。475,200 B，sha256 `5214d14f18d30d78248cce23e51c5f079e66016d01f7180fc913faf9f2713b7b`。配网填 MQTT 服务器走自有 broker + 本地时刻表；不填则与原版行为一致 |
+| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。476,480 B，sha256 `2bf183337578a8515a7022428e5b28b14f409c416e8177dc9701448821485c32`。配网填 MQTT 服务器走自有 broker + 本地时刻表；不填则与原版行为一致 |
 | `bin/ykyc001_v2_compiled.bin` | 原版最新源码的复现编译，462,896 B（与作者 v2 bin 仅差 16 B 构建信息） |
 | `bin/author/ykyc001_v2_author.bin` | 作者发布的 v2 原版，462,912 B |
 | `bin/ykyc001_v1_compiled.bin` / `bin/author/ykyc001_v1_author.bin` | 第一版（CSDN 源码篇版本），存档 |

@@ -29,6 +29,25 @@ int main() {
   CHECK(parse("ONN") == -1);
   CHECK(parse("2") == -1);
   CHECK(ykParseSwitchPayload(NULL, 0) == -1);
+  CHECK(parse("ON garbage") == -1);  // 正文后跟非空白内容不认
+  CHECK(parse("OFF x") == -1);
+  CHECK(parse("O N") == -1);
+  CHECK(parse("ON \r\n") == 1);    // 结尾多种空白仍认
+
+  // 设备 ID 校验
+  CHECK(ykDeviceIdValid("socket1"));
+  CHECK(ykDeviceIdValid("ykyc-1a2b3c"));
+  CHECK(ykDeviceIdValid("Living_Room-2"));
+  CHECK(!ykDeviceIdValid(""));
+  CHECK(!ykDeviceIdValid(NULL));
+  CHECK(!ykDeviceIdValid("a/b"));
+  CHECK(!ykDeviceIdValid("+"));
+  CHECK(!ykDeviceIdValid("#"));
+  CHECK(!ykDeviceIdValid("a\"b"));
+  CHECK(!ykDeviceIdValid("<img>"));
+  CHECK(!ykDeviceIdValid("has space"));
+  CHECK(!ykDeviceIdValid("123456789012345678901234567890123"));  // 33 位超长
+  CHECK(ykDeviceIdValid("12345678901234567890123456789012"));    // 32 位上限
 
   // topic 构造
   char buf[96];
