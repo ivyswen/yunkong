@@ -63,7 +63,7 @@ Client ID：`yunkong-socket1`。重连退避与原版一致（2s 起翻倍至 60
 - 自定义模式只走**明文 TCP MQTT**（局域网 broker 的常规用法）；需要 TLS 的公网 broker 不在此版范围。OneNET 模式的 TLS 不受影响。
 - OneNET 协议里的「延时恢复」（倒计时式的延时开关）是作者服务端协议的一部分，自定义模式**未移植**；定点时刻表已由设备本地实现（见上）。
 - 自定义模式下作者的微信小程序控制不了这台设备（它只连 OneNET）。
-- 设备执行 `set` 后会向同一 topic 发布空的 retained 消息，清掉 broker 上残留的 retained 指令，避免断线重连时旧指令重投、抵消时刻表或按键动作。开关状态以 retained 的 `state` 为准，面板的 `set` 不必勾 retain。
+- 防 retained 旧指令抵消：设备每次（重）订阅后的 **2.5 秒窗口内**收到的 `set` 只清不执行（判定为 broker 重投的 retained/排队包，与 OneNET 分支的忽略窗口同制），且设备收到 `set` 后会向同一 topic 发布空的 retained 消息、清掉 broker 上的残留。代价：恰好在重连瞬间 2.5 秒内发出的正常指令也会被吞，看 `state` 没变重发即可。开关状态以 retained 的 `state` 为准，面板的 `set` 不必勾 retain。
 - 设备 ID 只允许 `A-Z a-z 0-9 _ -`（1–32 位）；含 `/`、`+`、`#`、空格、引号等会被拒绝并回落 `ykyc-<芯片ID>`（串口会打印提示）。
 
 ## 源码与测试

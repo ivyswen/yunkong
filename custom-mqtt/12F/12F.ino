@@ -132,6 +132,8 @@ bool clockReady = false;
 static const time_t kClockValidEpoch = 1700000000;
 /** 订阅成功后短时间内不执行下行改继电器，避免 retained/排队包误动作 */
 static unsigned long mqttIgnoreRelayDownlinkUntil = 0;
+/** 自定义模式同理：订阅后窗口内收到的 set 视为 retained 重投，只清不执行 */
+static unsigned long customSetIgnoreUntil = 0;
 
 // LED
 unsigned long ledTime = 0;
@@ -645,13 +647,17 @@ void receivedCallback(char* topicname, uint8_t* payload, unsigned int length)
       int v = ykParseSwitchPayload(payload, length);
       Serial.print("custom mqtt set -> ");
       Serial.println(v);
-      if (v >= 0) {
+      if (v >= 0 && ykWithinIgnoreWindow(millis(), customSetIgnoreUntil)) {
+        // 订阅后窗口内：判定为 retained 重投（或订阅瞬间的排队包），只清不执行，
+        // 否则旧指令会抵消断线期间时刻表/按键动作。窗口外的正常指令不受影响。
+        Serial.println("custom mqtt set ignored: post-subscribe window");
+      } else if (v >= 0) {
         flagState = v ? HIGH : LOW;
         clearLocalRestore("custom_mqtt_set");
         updateFlagStart();
         persistFlagState();
       }
-      // 清掉 broker 上可能 retained 的 set：否则断线重连会重投旧指令，抵消期间的时刻表/按键动作。
+      // 清掉 broker 上可能 retained 的 set：否则每次断线重连都会重投旧指令。
       // 空载荷回来时解析为 -1 被忽略，不会循环。状态以 retained 的 state 主题为准。
       if (length > 0) {
         mqttclient.publish(tSet, (const uint8_t*)"", 0, true);
@@ -816,6 +822,7 @@ void mqtt_update_custom() {
     mqttclient_state = 1;
     mqttReconnectDelayMs = MQTT_RECONNECT_MIN_MS;
     mqttclient.subscribe(tSet, 1);
+    customSetIgnoreUntil = millis() + 2500UL;
     char tSchedSet[112];
     if (ykBuildTopic(tSchedSet, sizeof(tSchedSet), CLIENTID.c_str(), "schedule/set") > 0) {
       mqttclient.subscribe(tSchedSet, 1);

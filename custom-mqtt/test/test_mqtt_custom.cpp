@@ -60,6 +60,14 @@ int main() {
   char tiny[8];
   CHECK(ykBuildTopic(tiny, sizeof(tiny), "socket1", "state") == -1);  // 缓冲不足明确失败
 
+  // 订阅后忽略窗口（防 retained set 重投抵消时刻表/按键动作）：窗口内只清不执行
+  CHECK(ykWithinIgnoreWindow(1000, 3500));        // 窗口内 -> 忽略执行
+  CHECK(!ykWithinIgnoreWindow(3500, 3500));       // 到界 -> 放行（与 OneNET 分支 >=0 放行一致）
+  CHECK(!ykWithinIgnoreWindow(4000, 3500));       // 窗口外 -> 放行
+  CHECK(!ykWithinIgnoreWindow(12345, 0));         // 未布防（初始 0）-> 放行
+  CHECK(ykWithinIgnoreWindow(4294967195UL, 100)); // millis 环绕：until 在回绕后仍未到 -> 忽略
+  CHECK(!ykWithinIgnoreWindow(200, 100));         // 环绕后已过界 -> 放行
+
   if (fails == 0) printf("ALL PASS\n");
   return fails ? 1 : 0;
 }
