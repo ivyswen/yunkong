@@ -1,0 +1,20 @@
+# Intermediate build artifacts
+*.elf
+*.map
+*.hex
+*.exe
+*.o
+*.a
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*~

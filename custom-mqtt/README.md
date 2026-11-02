@@ -1,76 +1,102 @@
-# 自定义 MQTT 版固件
+# 自定义 MQTT & OneNET AIoT 固件
 
-在最新版固件（`../12F/12F.ino`）基础上增加**自定义 MQTT 服务器**支持，脱离作者托管的 OneNET 后台，改连自己的 broker（如 CasaOS Mosquitto），用任意 MQTT 客户端控制（mqtt-panel、Home Assistant 等）。
+在最新版固件（`../12F/12F.ino`）基础上增加**双模式支持**：
+1. **OneNET AIoT 物联网融合平台**：支持 TLS 8883 (MQTTS) 加密接入，采用官方 OneJSON 物模型协议，支持双向状态同步与云端开关控制，配网动态填入 Token（不硬编码密钥，保障开源安全）。
+2. **自定义局域网 MQTT 服务器**：脱离云端后台，直连自建 broker（如 CasaOS Mosquitto），用任意 MQTT 客户端（mqtt-panel、Home Assistant 等）控制。
+3. **两模式通用能力**：设备本地定点时刻表（断网照常执行）、断电记忆、防重投窗口、按键本地控制。
 
-原版 OneNET 路径**完全保留**：配网时不填 MQTT 服务器即走原逻辑，行为与原版一致。
-
-## 配网字段（192.168.22.1 配网页）
+## 配网字段说明（访问 192.168.22.1 配网页）
 
 | 字段 | 含义 |
 |---|---|
-| WiFi 名称/密码 | 家里 2.4G WiFi |
-| 输入设备ID | 自定义模式下即设备名（topic 的一段）；留空自动用 `ykyc-<芯片ID>` |
-| 输入加密串 | 仅 OneNET 模式用，自定义模式可留空 |
-| **MQTT服务器** | **填了即启用自定义模式**（broker 地址，如 `192.168.1.10`）；留空 = 原 OneNET |
-| MQTT端口 | 留空 = 1883 |
-| MQTT用户名 | 可留空（匿名） |
-| MQTT密码 | 可留空 |
+| WiFi 名称/密码 | 2.4G WiFi 的 SSID 与密码 |
+| 设备名称 | OneNET 模式下为设备名（默认 `ykyc001_dev1`）；自定义模式下为 topic 一段 |
+| OneNET Token | 连接鉴权密码（用 `tools/onenet_tool.py` 生成后填入；自定义模式留空） |
+| **服务器** | **填了即启用自定义模式**（broker 地址，如 `192.168.1.10`）；留空 = OneNET AIoT TLS 8883 |
+| 端口 | 留空 = 8883 (OneNET) / 1883 (自定义 MQTT) |
+| 产品ID/用户名 | OneNET 模式下为产品 ID (PID，默认 `MiXfbNnY6r`)；自定义模式下为 MQTT 用户名（可留空） |
+| 密码 | 仅自建 MQTT 使用；OneNET 模式留空 |
 
 改配置：长按按键 10 秒清配网重配，或开设备局域网 IP 的维护页用「清除配网并重启」。状态页 `/status` 的 `mqtt_mode` 字段会显示 `custom` / `onenet`。
 
-## 定点时刻表（自定义 MQTT 模式）
+---
+
+## OneNET AIoT 快速接入指南
+
+### 1. 计算 Token（安全无泄露）
+使用仓库自带的调试工具计算 10 年免维护 Token（密钥仅保留在本地终端，不入库）：
+
+```bash
+# 设备级 Token（推荐，仅授权该设备）
+python tools/onenet_tool.py token --pid MiXfbNnY6r --dev ykyc001_dev1 --key <你的AccessKey>
+
+# 或产品级 Token（该产品下所有插座通用）
+python tools/onenet_tool.py token --pid MiXfbNnY6r --key <你的AccessKey>
+```
+
+### 2. 注册设备（如未注册）
+```bash
+python tools/onenet_tool.py create --pid MiXfbNnY6r --dev ykyc001_dev1 --key <你的AccessKey>
+```
+
+### 3. 设备配网
+1. 固件刷入插座（整 bin 写 `0x00000`）。
+2. 手机连接插座热点（`YKYC-xxxxxx`），打开浏览器访问 `http://192.168.22.1`。
+3. 填入：
+   - WiFi 名称与密码
+   - 设备名称：`ykyc001_dev1`
+   - OneNET Token：粘贴刚才计算出的 `version=2018-10-31&...` 字符串
+   - 服务器、端口、产品ID、密码全部留空（自动默认 PID `MiXfbNnY6r` 与 TLS 8883）。
+4. 点击「开始配网」，设备自动重启并通过 TLS 8883 连接 OneNET AIoT。
+
+### 4. 物模型通信协议（OneJSON）
+- **属性下发（云端 -> 设备）**：`$sys/{pid}/{devName}/thing/property/set`
+  - 格式：`{"id":"123","version":"1.0","params":{"switch1":true}}`（支持 `switch1` 与 `total_switch`）
+- **下发响应（设备 -> 云端）**：`$sys/{pid}/{devName}/thing/property/set_reply`
+  - 格式：`{"id":"123","code":200,"msg":"success"}`
+- **属性上报（设备 -> 云端）**：`$sys/{pid}/{devName}/thing/property/post`
+  - 格式：`{"id":"1","version":"1.0","params":{"switch1":{"value":true},"total_switch":{"value":true}}}`
+
+---
+
+## 定点时刻表（本地执行）
 
 设备本地存最多 **4 条**规则，到点自己动作，断网照常执行。规则 = 时刻 + 开/关 + 星期掩码。
 
-**文本格式**（两个配置入口共用）：`HHMM,动作,掩码`，多条用 `;` 分隔
-
+**文本格式**：`HHMM,动作,掩码`，多条用 `;` 分隔
 - 例：`0730,1,127;1730,0,127` = 每天 07:30 开、17:30 关
 - 动作：`1`=开，`0`=关；时刻也可写 `07:30` 形式
 - 掩码：bit0=周一 … bit6=周日；`127`=每天，`31`=工作日（周一至五），`96`=周末
 - 空文本 = 清空全部；任一条格式非法 → 整表拒绝、保持原表
 
 **配置入口**：
-
 1. 局域网维护页（设备 IP 的 OTA 页）：「定时开关」表单直接填，含时区偏移（默认 UTC+8）
-2. MQTT：向 `yunkong/<设备ID>/schedule/set` 发布上述文本整表替换；设备把生效中的时刻表 retained 回发到 `yunkong/<设备ID>/schedule`（上线时自动发一次）。mqtt-panel 里用文本发布面板即可改表
+2. MQTT（自定义模式）：向 `yunkong/<设备ID>/schedule/set` 发布上述文本整表替换；设备把生效中的时刻表 retained 回发到 `yunkong/<设备ID>/schedule`。
 
-**存储与时间**：规则与时区存 EEPROM（偏移 128，与继电器状态的偏移 64 同域），清配网（按键长按 / 维护页清除）时一并清除。时间靠 SNTP（阿里云/cn.pool/pool.ntp.org），未对上时不会误触发；同一分钟只判定一次；触发后状态经 `state` 主题正常上报。
+---
 
-- **断网照常执行**：上电对过一次时后，WiFi 断开不影响时刻表（系统时钟自走，联网后 SNTP 自动校准）。
-- **时区即改即生效**：维护页保存时区后立即应用，无需重启。
-- **断电补执行**：上电对时后，若断电/未对时期间错过了规则（例如 07:00–07:40 停电错过 07:30 开），且这条规则晚于继电器最后一次变化（手动、远程或时刻表），会补执行一次；若规则之后已经手动改过，则以手动为准。继电器最后变化时刻与状态位一起存 EEPROM（偏移 66–69）。回看范围 7 天。
-
-## 协议
+## 局域网自建 MQTT 协议
 
 以设备ID = `socket1` 为例：
 
 | 方向 | Topic | 载荷 | 说明 |
 |---|---|---|---|
-| 控制 ↓ | `yunkong/socket1/set` | `ON`/`OFF`（也认 `1`/`0`、单字节 `0x01`/`0x00`，大小写/首尾空白不敏感） | QoS 1 订阅 |
+| 控制 ↓ | `yunkong/socket1/set` | `ON`/`OFF`（也认 `1`/`0`、单字节 `0x01`/`0x00`） | QoS 1 订阅 |
 | 状态 ↑ | `yunkong/socket1/state` | `ON`/`OFF` | retained；连接时、每次状态变化时上报（含物理按键切换） |
 | 在线 ↑ | `yunkong/socket1/online` | `online`/`offline` | retained；offline 由 LWT 遗嘱发布 |
 
-Client ID：`yunkong-socket1`。重连退避与原版一致（2s 起翻倍至 60s）。
+---
 
-### mqtt-panel 里怎么加
+## 编译与测试
 
-新建连接指向自己的 broker，新建开关面板：
-- 发布 topic：`yunkong/socket1/set`，开载荷 `ON`、关载荷 `OFF`
-- 订阅 topic：`yunkong/socket1/state`（同载荷），在线指示可再订阅 `yunkong/socket1/online`
+WSL 编译命令（使用 arduino-cli）：
+```bash
+rduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disabled,stacksmash=disabled,ssl=basic,mmu=3232,non32xfer=fast,ResetMethod=nodemcu,CrystalFreq=26,FlashFreq=40,FlashMode=dout,eesz=1M64,led=2,sdk=nonosdk_190703,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200' custom-mqtt/12F
+```
 
-## 限制（先说清）
-
-- 自定义模式只走**明文 TCP MQTT**（局域网 broker 的常规用法）；需要 TLS 的公网 broker 不在此版范围。OneNET 模式的 TLS 不受影响。
-- OneNET 协议里的「延时恢复」（倒计时式的延时开关）是作者服务端协议的一部分，自定义模式**未移植**；定点时刻表已由设备本地实现（见上）。
-- 自定义模式下作者的微信小程序控制不了这台设备（它只连 OneNET）。
-- 防 retained 旧指令抵消：设备每次（重）订阅后的 **2.5 秒窗口内**收到的 `set` 只清不执行（判定为 broker 重投的 retained/排队包，与 OneNET 分支的忽略窗口同制），且设备收到 `set` 后会向同一 topic 发布空的 retained 消息、清掉 broker 上的残留。代价：恰好在重连瞬间 2.5 秒内发出的正常指令也会被吞，看 `state` 没变重发即可。开关状态以 retained 的 `state` 为准，面板的 `set` 不必勾 retain。
-- 设备 ID 只允许 `A-Z a-z 0-9 _ -`（1–32 位）；含 `/`、`+`、`#`、空格、引号等会被拒绝并回落 `ykyc-<芯片ID>`（串口会打印提示）。
-
-## 源码与测试
-
-- `12F/12F.ino` — 固件（与原版的差异仅限：配网页 4 个新字段、`setNumUMSG(6)`、配置读取、回调与连接各一条自定义分支、状态页多一个字段）
-- `12F/mqtt_custom.h` — 纯逻辑（载荷解析、topic 构造），无 Arduino 依赖
-- `test/test_mqtt_custom.cpp` — 主机侧测试：`g++ -std=c++11 test_mqtt_custom.cpp -o test && ./test`
-- 编译命令与原版相同（见仓库根 README）。产物 `../bin/ykyc001_v2_custom_mqtt.bin`，刷法同 FLASHING.md（写 0x00000）。
-
-⚠️ 未经真机验证：已通过编译（自有文件零警告）与主机侧逻辑测试，刷机实测待硬件完成。
+主机侧单测（无需硬件，直接用 g++ 验证协议解析）：
+```bash
+g++ -Wall -Wextra -O2 custom-mqtt/test/test_onenet_aiot.cpp -o test_onenet && ./test_onenet
+g++ -Wall -Wextra -O2 custom-mqtt/test/test_mqtt_custom.cpp -o test_custom && ./test_custom
+g++ -Wall -Wextra -O2 custom-mqtt/test/test_schedule.cpp -o test_sched && ./test_sched
+```
