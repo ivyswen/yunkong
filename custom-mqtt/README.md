@@ -37,11 +37,13 @@ python tools/onenet_tool.py token --pid MiXfbNnY6r --key <你的AccessKey>
 ### 2. 注册设备（如未注册）
 ```bash
 python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <你的AccessKey>
+
+> 电脑联调：`python tools/onenet_tool.py test-mqtt --help` 可模拟设备连接平台收发物模型消息（TLS 用随仓 `tools/onenet_root_ca.pem` 做根证书校验，与固件同源）。
 ```
 
 ### 3. 设备配网
 1. 固件刷入插座（整 bin 写 `0x00000`）。
-2. 手机连接插座热点（`YKYC-xxxxxx`），打开浏览器访问 `http://192.168.22.1`。
+2. 手机连接插座热点（`WiFi配网`，BGWiFiConfig 默认名），打开浏览器访问 `http://192.168.22.1`。
 3. 填入：
    - WiFi 名称与密码
    - 设备名称：`ykyc001_dev1`
@@ -99,7 +101,7 @@ python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <�
 
 WSL 编译命令（使用 arduino-cli）：
 ```bash
-rduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disabled,stacksmash=disabled,ssl=basic,mmu=3232,non32xfer=fast,ResetMethod=nodemcu,CrystalFreq=26,FlashFreq=40,FlashMode=dout,eesz=1M64,led=2,sdk=nonosdk_190703,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200' custom-mqtt/12F
+arduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disabled,stacksmash=disabled,ssl=basic,mmu=3232,non32xfer=fast,ResetMethod=nodemcu,CrystalFreq=26,FlashFreq=40,FlashMode=dout,eesz=1M64,led=2,sdk=nonosdk_190703,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200' custom-mqtt/12F
 ```
 
 主机侧单测（无需硬件，直接用 g++ 验证协议解析）：

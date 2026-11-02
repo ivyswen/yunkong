@@ -659,6 +659,12 @@ void receivedCallback(char* topicname, uint8_t* payload, unsigned int length)
     Serial.print(" (msgId=");
     Serial.print(msgId);
     Serial.println(")");
+    if (v >= 0 && ykWithinIgnoreWindow(millis(), mqttIgnoreRelayDownlinkUntil)) {
+      // 订阅后窗口内：判定为平台重投/排队包，不执行也不回执（与自定义模式同制，
+      // 见 mqtt_custom.h ykWithinIgnoreWindow）。窗口外的新指令不受影响。
+      Serial.println("onenet property/set ignored: post-subscribe window");
+      return;
+    }
     if (v >= 0) {
       flagState = (v == 1 ? HIGH : LOW);
       clearLocalRestore("onenet_set");
@@ -999,6 +1005,9 @@ void setup()
   if (ykIsCustomBrokerHost(MQTT_HOST.c_str())) {
     customMqtt = true;
     MQTT_PORT_N = (p > 0 && p <= 65535) ? p : 1883;
+    if (CLIENTID.length() > 0 && !ykDeviceIdValid(CLIENTID.c_str())) {
+      Serial.printf("invalid device id '%s', fallback\n", CLIENTID.c_str());
+    }
     if (CLIENTID.length() == 0 || !ykDeviceIdValid(CLIENTID.c_str())) {
       CLIENTID = "ykyc-" + String(ESP.getChipId(), HEX);
     }
@@ -1006,6 +1015,9 @@ void setup()
   } else {
     customMqtt = false;
     MQTT_PORT_N = (p > 0 && p <= 65535) ? p : 8883;
+    if (CLIENTID.length() > 0 && !ykDeviceIdValid(CLIENTID.c_str())) {
+      Serial.printf("invalid device id '%s', fallback\n", CLIENTID.c_str());
+    }
     if (CLIENTID.length() == 0 || !ykDeviceIdValid(CLIENTID.c_str())) {
       CLIENTID = "ykyc001_dev1";
     }

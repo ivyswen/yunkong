@@ -132,7 +132,6 @@ def cmd_list(args):
                 st = st_map.get(d.get("status"), str(d.get("status")))
                 print(f"[{i}] 设备名称: {d.get('name')}")
                 print(f"    状态: {st} | 设备ID: {d.get('did')}")
-                print(f"    设备密钥(sec_key): {d.get('sec_key')}")
                 print(f"    创建时间: {d.get('create_time')} | 最近上线: {d.get('last_time')}")
                 print("-" * 40)
     else:
@@ -238,8 +237,9 @@ def cmd_test_mqtt(args):
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=dev_name)
     client.username_pw_set(username=args.pid, password=token)
     if use_tls:
-        client.tls_set(cert_reqs=ssl.CERT_NONE)
-        client.tls_insecure_set(True)
+        # 与固件同一立场：用随仓的 OneNET 官方根证书做真校验（onenet_root_ca.pem 与固件内置证书同源）
+        ca_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "onenet_root_ca.pem")
+        client.tls_set(ca_certs=ca_path, cert_reqs=ssl.CERT_REQUIRED)
     client.on_connect = on_connect
     client.on_message = on_message
     

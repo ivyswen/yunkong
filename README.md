@@ -11,7 +11,7 @@
 
 | 文件 | 适合 |
 |---|---|
-| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。477,472 B，sha256 `e0739377f99cb39aef7488dc60433c5c980615219b581fcb02c9188bb265fb63`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT），双模式均支持本地时刻表 |
+| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。477,760 B，sha256 `c856397086571bf2f9bd68636619a6cd8c14015049a731facd9514eee1312066`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT），双模式均支持本地时刻表 |
 | `bin/ykyc001_v2_compiled.bin` | 原版最新源码的复现编译，462,896 B（与作者 v2 bin 仅差 16 B 构建信息） |
 | `bin/author/ykyc001_v2_author.bin` | 作者发布的 v2 原版，462,912 B |
 | `bin/ykyc001_v1_compiled.bin` / `bin/author/ykyc001_v1_author.bin` | 第一版（CSDN 源码篇版本），存档 |
@@ -109,11 +109,11 @@ arduino-cli compile --output-dir ./bin -b 'esp8266:esp8266:generic:xtal=80,vt=fl
 
 ## 配网
 
-上电灯闪 → 手机连「配网」热点 → 浏览器 192.168.22.1：
+上电灯闪 → 手机连「WiFi配网」热点 → 浏览器 192.168.22.1：
 
 - **OneNET AIoT 模式（默认）**：填家里 2.4G WiFi、设备名（`ykyc001_dev1`）、本地生成的 OneNET Token，其余留空
 - **自定义 MQTT 模式**：填家里 2.4G WiFi、设备名，并填入 MQTT 服务器 IP 等字段
 
 长按按键 10 秒清配网重来。
 
-⚠️ **验证状态：以上固件均已通过 WSL 编译（无警告）与主机侧逻辑单测。** 250V 市电设备：串口刷机全程禁止插市电，只用隔离 3.3V 供电；刷前先 `read_flash` 整片备份原厂固件（见 FLASHING.md）。
+⚠️ **验证状态：以上固件仅通过编译（自有文件无警告）与主机侧逻辑单测，未经真机验证**——尤其 OneNET AIoT 的 TLS 握手、模式判定与时刻表行为，须刷机实测后才算数。 250V 市电设备：串口刷机全程禁止插市电，只用隔离 3.3V 供电；刷前先 `read_flash` 整片备份原厂固件（见 FLASHING.md）。
