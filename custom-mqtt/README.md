@@ -36,7 +36,7 @@ python tools/onenet_tool.py token --pid MiXfbNnY6r --key <你的AccessKey>
 
 ### 2. 注册设备（如未注册）
 ```bash
-python tools/onenet_tool.py create --pid MiXfbNnY6r --dev ykyc001_dev1 --key <你的AccessKey>
+python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <你的AccessKey>
 ```
 
 ### 3. 设备配网
@@ -86,6 +86,14 @@ python tools/onenet_tool.py create --pid MiXfbNnY6r --dev ykyc001_dev1 --key <�
 | 在线 ↑ | `yunkong/socket1/online` | `online`/`offline` | retained；offline 由 LWT 遗嘱发布 |
 
 ---
+
+## 限制（先说清）
+
+- 自定义模式只走**明文 TCP MQTT**（局域网 broker 的常规用法），**无 TLS**，仅适合可信局域网；需要 TLS 的公网 broker 不在此版范围。OneNET AIoT 模式为 TLS 8883 + 内置根证书校验，不受影响。
+- 防 retained 旧指令抵消：设备每次（重）订阅后的 **2.5 秒窗口内**收到的 `set` 只清不执行（判定为 broker 重投的 retained/排队包），且设备收到 `set` 后会向同一 topic 发布空的 retained 消息、清掉 broker 上的残留。代价：恰好在重连瞬间 2.5 秒内发出的正常指令也会被吞，看 `state` 没变重发即可。开关状态以 retained 的 `state` 为准，面板的 `set` 不必勾 retain。
+- 设备 ID 只允许 `A-Z a-z 0-9 _ -`（1–32 位）；含 `/`、`+`、`#`、空格、引号等的会被回落为默认设备名（串口的 `Mode:` 行会打印实际使用的名字）。
+- 旧版 OneNET（产品 538578 + 作者小程序 + cmd 协议）已整体移除：旧配网参数（如旧 sign）升级后不再适用，必须按上面的 AIoT 流程重新配网。
+- OneNET 协议的「延时恢复」（倒计时式延时开关）未移植到自定义模式；定点时刻表是设备本地实现，双模式可用。
 
 ## 编译与测试
 

@@ -68,6 +68,15 @@ int main() {
   CHECK(ykWithinIgnoreWindow(4294967195UL, 100)); // millis 环绕：until 在回绕后仍未到 -> 忽略
   CHECK(!ykWithinIgnoreWindow(200, 100));         // 环绕后已过界 -> 放行
 
+  // 模式判定：服务器非空且非 OneNET 云域名 -> 自定义模式（与密码/端口无关）
+  CHECK(ykIsCustomBrokerHost("192.168.1.10"));
+  CHECK(ykIsCustomBrokerHost("broker.local"));
+  CHECK(ykIsCustomBrokerHost("10.0.0.5"));
+  CHECK(!ykIsCustomBrokerHost(""));
+  CHECK(!ykIsCustomBrokerHost(NULL));
+  CHECK(!ykIsCustomBrokerHost("MiXfbNnY6r.mqttstls.acc.cmcconenet.cn"));
+  CHECK(!ykIsCustomBrokerHost("mqttstls.heclouds.com"));
+
   if (fails == 0) printf("ALL PASS\n");
   return fails ? 1 : 0;
 }

@@ -90,6 +90,13 @@ int main() {
   CHECK(ykScheduleLastDue(r, 2, 2, 10, 0, &ago) == 0 && ago == 60);
   CHECK(ykScheduleLastDue(r, 2, 7, 10, 0, &ago) == -1);  // 非法 wday
 
+  // 补执行用的最后变化时刻消毒：未来值/0xFF 擦除态按未知(0)处理，否则补执行被永久禁用
+  CHECK(ykSanitizeChangeMin(100, 200) == 100);
+  CHECK(ykSanitizeChangeMin(0, 200) == 0);
+  CHECK(ykSanitizeChangeMin(200, 200) == 200);
+  CHECK(ykSanitizeChangeMin(300, 200) == 0);
+  CHECK(ykSanitizeChangeMin(0xFFFFFFFFu, 200) == 0);
+
   if (fails == 0) printf("ALL PASS\n");
   return fails ? 1 : 0;
 }

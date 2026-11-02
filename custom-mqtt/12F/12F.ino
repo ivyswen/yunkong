@@ -330,7 +330,8 @@ void scheduleCatchup(time_t now, const struct tm& ti) {
   }
   uint32_t nowMin = (uint32_t)(now / 60);
   uint32_t ruleEpochMin = nowMin >= (uint32_t)minutesAgo ? nowMin - (uint32_t)minutesAgo : 0;
-  if (lastFlagChangeMin > 0 && lastFlagChangeMin >= ruleEpochMin) {
+  uint32_t changeMin = ykSanitizeChangeMin(lastFlagChangeMin, nowMin);
+  if (changeMin > 0 && changeMin >= ruleEpochMin) {
     return;
   }
   int targetState = lastAction ? HIGH : LOW;
@@ -525,7 +526,7 @@ void handleStatus() {
   json += ",\"clock_ready\":" + String(clockReady ? "true" : "false");
   json += ",\"flag_state\":" + String(flagState == HIGH ? "1" : "0");
   json += ",\"clientid\":\"" + jsonEscape(CLIENTID) + "\"";
-  json += ",\"mqtt_mode\":\"" + String(customMqtt ? "custom_mqtt" : "onenet_tls") + "\"";
+  json += ",\"mqtt_mode\":\"" + String(customMqtt ? "custom" : "onenet") + "\"";
   char schedBuf[128];
   currentScheduleText(schedBuf, sizeof(schedBuf));
   json += ",\"schedule\":\"" + String(schedBuf) + "\"";
@@ -991,12 +992,11 @@ void setup()
   MQTT_USER = cleanUMSG(wifipw.readUMSG(5));
   MQTT_PASS = cleanUMSG(wifipw.readUMSG(6));
 
-  // 模式判断：如果填了自建密码(umsg6)或者端口显式填了1883等普通端口，或者明确填写了自定义局域网IP
-  // 规则：
-  // 1. 如果 MQTT_HOST 非空且不包含 "cmcconenet.cn" / "heclouds.com"，且填了 MQTT_PASS：视为自定义局域网 MQTT (明文TCP 1883)
-  // 2. 否则视为 OneNET MQTTS (TLS 8883)
+  // 模式判断（与 custom-mqtt/README 一致，判定只此一处 ykIsCustomBrokerHost）：
+  // 服务器非空且不是 OneNET 云域名 => 自定义局域网 MQTT；留空或云域名 => OneNET AIoT (TLS 8883)。
+  // 与密码、端口无关——匿名/异端口 broker 同样判自定义（金鱼审查 Major 1）。
   int p = portStr.toInt();
-  if (MQTT_HOST.length() > 0 && MQTT_HOST.indexOf("cmcconenet.cn") < 0 && MQTT_HOST.indexOf("heclouds.com") < 0 && (MQTT_PASS.length() > 0 || p == 1883)) {
+  if (ykIsCustomBrokerHost(MQTT_HOST.c_str())) {
     customMqtt = true;
     MQTT_PORT_N = (p > 0 && p <= 65535) ? p : 1883;
     if (CLIENTID.length() == 0 || !ykDeviceIdValid(CLIENTID.c_str())) {

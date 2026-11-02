@@ -243,3 +243,10 @@ static inline int ykScheduleLastDue(const YkRule* rules, int n, int wday, int ho
   }
   return result;
 }
+
+// 补执行用的「最后变化时刻」消毒：晚于现在 = 坏数据（旧固件没写过时间戳时
+// EEPROM 读回 0xFF 擦除态、或时钟曾被拨快），按未知(0)处理；否则坏值会让
+// scheduleCatchup 的比较恒成立、补执行被永久禁用。
+static inline uint32_t ykSanitizeChangeMin(uint32_t changeMin, uint32_t nowMin) {
+  return changeMin > nowMin ? 0 : changeMin;
+}

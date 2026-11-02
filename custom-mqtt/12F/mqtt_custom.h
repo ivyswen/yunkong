@@ -81,6 +81,19 @@ static inline bool ykDeviceIdValid(const char* id) {
   return true;
 }
 
+// 模式判定（与 custom-mqtt/README 一致，判定只此一处）：配网「MQTT 服务器」非空、
+// 且不是 OneNET 云域名 => 自定义（自建 broker）模式；留空或云域名 => OneNET 模式。
+// 与密码、端口无关：匿名 broker、非 1883 端口同样是自定义模式。
+static inline bool ykIsCustomBrokerHost(const char* host) {
+  if (host == NULL || host[0] == '\0') {
+    return false;
+  }
+  if (strstr(host, "cmcconenet.cn") != NULL || strstr(host, "heclouds.com") != NULL) {
+    return false;
+  }
+  return true;
+}
+
 // 订阅后忽略窗口判定（与 OneNET 分支的 (long)(millis()-until)>=0 放行互为镜像，millis 环绕安全）：
 // now 还没到 until => 处于窗口内。retained 的 set 只会在订阅瞬间被重投，窗口内的 set 只清不执行，
 // 避免旧指令抵消断线期间时刻表/按键已造成的继电器状态；until=0（未布防）恒为窗口外。
