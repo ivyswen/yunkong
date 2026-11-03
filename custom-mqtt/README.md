@@ -115,4 +115,5 @@ arduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disab
 ```bash
 g++ -Wall -Wextra -O2 custom-mqtt/test/test_onenet_aiot.cpp -o test_onenet && ./test_onenet
 g++ -Wall -Wextra -O2 custom-mqtt/test/test_mqtt_custom.cpp -o test_custom && ./test_custom
+python3 custom-mqtt/test/test_provisioning_html.py
 ```

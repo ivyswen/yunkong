@@ -52,19 +52,53 @@ WzdhzTYwVkxBaU+xf/2w
 
 BGWiFiConfig wifipw;
 
-String html = "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><title>云控智能插座配网</title>"
-              "<style> .input { border: 2px solid orange; padding: 10px; border-radius: 50px 20px; } .button { display: inline-block; padding: 15px 25px; font-size: 24px; cursor: pointer; text-align: center; text-decoration: none; outline: none; color: #fff; background-color: #4CAF50; border: none; border-radius: 15px; box-shadow: 0 9px #999; } .button:hover { background-color: #3e8e41 } .button:active { background-color: #3e8e41; box-shadow: 0 5px #666; transform: translateY(4px); } </style>"
-              "</head><body><center><form action=\"htmlresult\" method=\"post\">"
-              "<h4>WiFi名称:<input class=\"input\" type=\"text\" name=\"ssid\"></h4>"
-              "<h4>WiFi密码:<input class=\"input\" type=\"text\" name=\"pwd\"></h4>"
-              "<h4>设备名称(OneNET设备名):<input class=\"input\" type=\"text\" name=\"umsg1\"></h4>"
-              "<h4>OneNET Token(连接密码):<input class=\"input\" type=\"text\" name=\"umsg2\"></h4>"
-              "<h4>服务器(留空=OneNET MQTTS TLS):<input class=\"input\" type=\"text\" name=\"umsg3\"></h4>"
-              "<h4>端口(OneNET留空=8883):<input class=\"input\" type=\"text\" name=\"umsg4\"></h4>"
-              "<h4>产品ID/用户名(PID):<input class=\"input\" type=\"text\" name=\"umsg5\"></h4>"
-              "<h4>密码(自建MQTT留空填此):<input class=\"input\" type=\"text\" name=\"umsg6\"></h4>"
-              "<br>模式选择：<input type=\"radio\" name=\"mode\" value=\"1\" checked>mode:1<br>"
-              "<input type=\"submit\" value=\"开始配网\"></form></body></html>";
+static const char provisioningHtml[] PROGMEM = "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
+              "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+              "<title>云控智能插座配网</title>"
+              "<style>"
+              "body{font-family:Arial,sans-serif;margin:16px;color:#222;background:#fff}"
+              ".wrap{max-width:600px;margin:0 auto}h2{text-align:center}"
+              ".notice{border:1px solid #d99a00;background:#fff6d8;border-radius:10px;padding:12px;line-height:1.6}"
+              ".field{margin:16px 0;text-align:left}.field label{display:block;font-weight:bold;margin-bottom:6px}"
+              ".input{border:2px solid orange;padding:10px;border-radius:12px;width:100%;box-sizing:border-box;font-size:16px}"
+              ".help{display:block;margin-top:5px;color:#555;font-size:14px;line-height:1.55}"
+              ".button{display:block;width:100%;padding:14px 20px;font-size:20px;cursor:pointer;text-align:center;color:#fff;background-color:#4CAF50;border:none;border-radius:12px}"
+              ".button:hover{background-color:#3e8e41}.foot{color:#555;font-size:14px;line-height:1.55}"
+              "</style></head><body><main class=\"wrap\"><h2>云控智能插座配网</h2>"
+              "<div class=\"notice\"><strong>先看这里：服务模式由“服务器”字段决定。</strong><br>"
+              "OneNET AIoT：服务器留空或填官方域名，重点填写设备名称、Token 和产品 ID。<br>"
+              "自建 MQTT：服务器填 broker 的裸 IP 或域名，重点填写服务器、端口、用户名和密码；Token 不使用。</div>"
+              "<form action=\"htmlresult\" method=\"post\">"
+              "<div class=\"field\"><label for=\"ssid\">WiFi 名称（SSID）</label>"
+              "<input id=\"ssid\" class=\"input\" type=\"text\" name=\"ssid\" placeholder=\"要连接的 2.4GHz WiFi 名称\">"
+              "<small class=\"help\">必填。只能连接 2.4GHz WiFi，名称必须与路由器 SSID 完全一致；本设备不支持 5GHz。</small></div>"
+              "<div class=\"field\"><label for=\"pwd\">WiFi 密码</label>"
+              "<input id=\"pwd\" class=\"input\" type=\"text\" name=\"pwd\" placeholder=\"无密码的开放网络可留空\">"
+              "<small class=\"help\">填写上面 WiFi 的密码，注意大小写；提交前请再次核对。</small></div>"
+              "<div class=\"field\"><label for=\"umsg1\">设备名称 / 设备 ID</label>"
+              "<input id=\"umsg1\" class=\"input\" type=\"text\" name=\"umsg1\" placeholder=\"例如：ykyc001_dev1\">"
+              "<small class=\"help\">两种模式都使用：OneNET 模式时须与平台中已创建的设备名一致；自建 MQTT 模式时用于话题 yunkong/设备ID/set、state、online。只能使用 1–32 个英文字母、数字、下划线或连字符。留空或不合法时，自建模式自动生成 ykyc-芯片ID，OneNET 模式自动使用 ykyc001_dev1。</small></div>"
+              "<div class=\"field\"><label for=\"umsg2\">OneNET Token</label>"
+              "<input id=\"umsg2\" class=\"input\" type=\"text\" name=\"umsg2\" placeholder=\"粘贴完整的 OneNET Token\">"
+              "<small class=\"help\">仅 OneNET AIoT 模式使用。粘贴用 tools/onenet_tool.py 生成的完整 Token（以 version=2018-10-31&amp; 开头）；不要填写 AccessKey。自建 MQTT 模式会忽略此字段，可留空。</small></div>"
+              "<div class=\"field\"><label for=\"umsg3\">服务器</label>"
+              "<input id=\"umsg3\" class=\"input\" type=\"text\" name=\"umsg3\" placeholder=\"自建模式填裸 IP/域名；OneNET 模式留空\">"
+              "<small class=\"help\">这是模式判定字段：留空或填 OneNET 官方域名 → OneNET AIoT；填其他裸 IP 或域名 → 自建 MQTT，例如 192.168.88.79。不要添加 mqtt://、端口号或路径。</small></div>"
+              "<div class=\"field\"><label for=\"umsg4\">端口</label>"
+              "<input id=\"umsg4\" class=\"input\" type=\"text\" name=\"umsg4\" placeholder=\"通常留空，自动使用默认端口\">"
+              "<small class=\"help\">可以留空。留空时：OneNET 使用 8883，自建 MQTT 使用 1883。只有服务使用非默认端口时才填写；填写端口不会改变上面的模式判定。</small></div>"
+              "<div class=\"field\"><label for=\"umsg5\">产品 ID / MQTT 用户名</label>"
+              "<input id=\"umsg5\" class=\"input\" type=\"text\" name=\"umsg5\" placeholder=\"OneNET PID 或自建 MQTT 用户名\">"
+              "<small class=\"help\">按模式二选一：OneNET 模式填产品 ID（PID），留空自动使用 MiXfbNnY6r；自建 MQTT 模式填 broker 用户名，broker 允许匿名时可留空。</small></div>"
+              "<div class=\"field\"><label for=\"umsg6\">MQTT 密码</label>"
+              "<input id=\"umsg6\" class=\"input\" type=\"text\" name=\"umsg6\" placeholder=\"仅自建 MQTT 模式填写\">"
+              "<small class=\"help\">仅自建 MQTT 模式使用，填写与上面用户名对应的 broker 密码；OneNET 模式会忽略。用户名留空时按匿名连接，密码不会单独发送。</small></div>"
+              "<div class=\"field\"><label>配网模式（mode）</label>"
+              "<label><input type=\"radio\" name=\"mode\" value=\"1\" checked> 1（固定）</label>"
+              "<small class=\"help\">这是 BGWiFiConfig 的配网参数，不是服务模式开关，请保持 1；OneNET 或自建 MQTT 由服务器字段决定。</small></div>"
+              "<input class=\"button\" type=\"submit\" value=\"开始配网\">"
+              "<p class=\"foot\">提交后，设备会保存配置并重启连接；配网热点关闭表示已进入连接流程。</p>"
+              "</form></main></body></html>";
 
 PubSubClient mqttclient;
 WiFiClient plainMqttClient;
@@ -726,7 +760,7 @@ void setup()
   wifipw.setWiFiTimeOut(10);
   wifipw.useSpaceWiFi(true);
   wifipw.autoStart(true);
-  wifipw.setZDYhtml(html);
+  wifipw.setZDYhtml(String(FPSTR(provisioningHtml)));
   wifipw.setNumUMSG(6);
   wifipw.begin();
   wifipw.setOTATimeOut(30);
