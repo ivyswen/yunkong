@@ -52,6 +52,15 @@ WzdhzTYwVkxBaU+xf/2w
 
 BGWiFiConfig wifipw;
 
+// 固件版本：由 custom-mqtt/build.sh 在编译时注入（git 短哈希 + 编译时间），
+// 用于 OTA 后在 Web 页面区分新旧固件；未经脚本编译时回落 dev + 编译日期宏。
+#ifndef FW_GIT_HASH
+#define FW_GIT_HASH "dev"
+#endif
+#ifndef FW_BUILD_TIME
+#define FW_BUILD_TIME __DATE__ " " __TIME__
+#endif
+
 static const char provisioningHtml[] PROGMEM = "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
               "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
               "<title>云控智能插座配网</title>"
@@ -98,6 +107,7 @@ static const char provisioningHtml[] PROGMEM = "<!DOCTYPE html><html lang=\"zh-C
               "<small class=\"help\">这是 BGWiFiConfig 的配网参数，不是服务模式开关，请保持 1；OneNET 或自建 MQTT 由服务器字段决定。</small></div>"
               "<input class=\"button\" type=\"submit\" value=\"开始配网\">"
               "<p class=\"foot\">提交后，设备会保存配置并重启连接；配网热点关闭表示已进入连接流程。</p>"
+              "<p class=\"foot\">固件版本：" FW_GIT_HASH " · 编译时间 " FW_BUILD_TIME "</p>"
               "</form></main></body></html>";
 
 PubSubClient mqttclient;
@@ -269,6 +279,7 @@ static const char otaIndexHtml[] PROGMEM =
     "x.onload=function(){"
     "try{var s=JSON.parse(x.responseText);"
     "var h='<table>';"
+    "h+='<tr><td>固件版本</td><td>'+esc(s.fw_version||'—')+' · '+esc(s.build_time||'')+'</td></tr>';"
     "h+='<tr><td>WiFi</td><td>'+(s.wifi_status==3?ok(s.wifi_str):err(s.wifi_str))+'</td></tr>';"
     "h+='<tr><td>IP</td><td>'+esc(s.ip||'—')+'</td></tr>';"
     "h+='<tr><td>模式</td><td>'+esc(s.mqtt_mode)+'</td></tr>';"
@@ -345,6 +356,8 @@ void handleStatus() {
   json += ",\"flag_state\":" + String(flagState == HIGH ? "1" : "0");
   json += ",\"clientid\":\"" + jsonEscape(CLIENTID) + "\"";
   json += ",\"mqtt_mode\":\"" + String(customMqtt ? "custom" : "onenet") + "\"";
+  json += ",\"fw_version\":\"" + String(FW_GIT_HASH) + "\"";
+  json += ",\"build_time\":\"" + String(FW_BUILD_TIME) + "\"";
   json += ",\"reconnect_delay_ms\":" + String(mqttReconnectDelayMs);
   json += "}";
   OTAserver.sendHeader("Access-Control-Allow-Origin", "*");
@@ -743,6 +756,10 @@ void setup()
 {
   Serial.begin(115200);
   delay(1000);
+  Serial.print("FW version: ");
+  Serial.print(FW_GIT_HASH);
+  Serial.print(" build: ");
+  Serial.println(FW_BUILD_TIME);
   mqttclient.setBufferSize(512);
 
   pinMode(LED_B, OUTPUT);

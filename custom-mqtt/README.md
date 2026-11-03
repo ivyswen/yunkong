@@ -106,7 +106,13 @@ mqtt:
 
 ## 编译与测试
 
-WSL 编译命令（使用 arduino-cli）：
+推荐用构建脚本编译（自动把 git 短哈希和编译时间注入为固件版本，产物直接写入根目录 `bin/`）：
+```bash
+./custom-mqtt/build.sh
+```
+注入的版本号会显示在维护页状态表第一行、配网页页脚和开机串口日志里，OTA 后打开维护页即可确认新固件是否生效；工作区有未提交改动时版本号带 `-dirty` 后缀。
+
+也可以直接用 arduino-cli 编译（不注入时页面显示 `dev` + 编译日期，功能不受影响）：
 ```bash
 arduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disabled,stacksmash=disabled,ssl=basic,mmu=3232,non32xfer=fast,ResetMethod=nodemcu,CrystalFreq=26,FlashFreq=40,FlashMode=dout,eesz=1M64,led=2,sdk=nonosdk_190703,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200' custom-mqtt/12F
 ```
@@ -116,4 +122,5 @@ arduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disab
 g++ -Wall -Wextra -O2 custom-mqtt/test/test_onenet_aiot.cpp -o test_onenet && ./test_onenet
 g++ -Wall -Wextra -O2 custom-mqtt/test/test_mqtt_custom.cpp -o test_custom && ./test_custom
 python3 custom-mqtt/test/test_provisioning_html.py
+python3 custom-mqtt/test/test_fw_version.py
 ```
