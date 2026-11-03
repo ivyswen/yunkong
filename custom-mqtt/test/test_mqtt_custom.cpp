@@ -60,7 +60,7 @@ int main() {
   char tiny[8];
   CHECK(ykBuildTopic(tiny, sizeof(tiny), "socket1", "state") == -1);  // 缓冲不足明确失败
 
-  // 订阅后忽略窗口（防 retained set 重投抵消时刻表/按键动作）：窗口内只清不执行
+  // 订阅后忽略窗口（防 retained set 重投抵消按键动作）：窗口内只清不执行
   CHECK(ykWithinIgnoreWindow(1000, 3500));        // 窗口内 -> 忽略执行
   CHECK(!ykWithinIgnoreWindow(3500, 3500));       // 到界 -> 放行（与 OneNET 分支 >=0 放行一致）
   CHECK(!ykWithinIgnoreWindow(4000, 3500));       // 窗口外 -> 放行

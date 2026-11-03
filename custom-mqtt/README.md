@@ -3,7 +3,7 @@
 在最新版固件（`../12F/12F.ino`）基础上增加**双模式支持**：
 1. **OneNET AIoT 物联网融合平台**：支持 TLS 8883 (MQTTS) 加密接入，采用官方 OneJSON 物模型协议，支持双向状态同步与云端开关控制，配网动态填入 Token（不硬编码密钥，保障开源安全）。
 2. **自定义局域网 MQTT 服务器**：脱离云端后台，直连自建 broker（如 CasaOS Mosquitto），用任意 MQTT 客户端（mqtt-panel、Home Assistant 等）控制。
-3. **两模式通用能力**：设备本地定点时刻表（断网照常执行）、断电记忆、防重投窗口、按键本地控制。
+3. **两模式通用能力**：断电记忆、防重投窗口、按键本地控制。
 
 ## 配网字段说明（访问 192.168.22.1 配网页）
 
@@ -61,22 +61,6 @@ python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <�
 
 ---
 
-## 定点时刻表（本地执行）
-
-设备本地存最多 **4 条**规则，到点自己动作，断网照常执行。规则 = 时刻 + 开/关 + 星期掩码。
-
-**文本格式**：`HHMM,动作,掩码`，多条用 `;` 分隔
-- 例：`0730,1,127;1730,0,127` = 每天 07:30 开、17:30 关
-- 动作：`1`=开，`0`=关；时刻也可写 `07:30` 形式
-- 掩码：bit0=周一 … bit6=周日；`127`=每天，`31`=工作日（周一至五），`96`=周末
-- 空文本 = 清空全部；任一条格式非法 → 整表拒绝、保持原表
-
-**配置入口**：
-1. 局域网维护页（设备 IP 的 OTA 页）：「定时开关」表单直接填，含时区偏移（默认 UTC+8）
-2. MQTT（自定义模式）：向 `yunkong/<设备ID>/schedule/set` 发布上述文本整表替换；设备把生效中的时刻表 retained 回发到 `yunkong/<设备ID>/schedule`。
-
----
-
 ## 局域网自建 MQTT 协议
 
 以设备ID = `socket1` 为例：
@@ -95,7 +79,7 @@ python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <�
 - 防 retained 旧指令抵消：设备每次（重）订阅后的 **2.5 秒窗口内**收到的 `set` 只清不执行（判定为 broker 重投的 retained/排队包），且设备收到 `set` 后会向同一 topic 发布空的 retained 消息、清掉 broker 上的残留。代价：恰好在重连瞬间 2.5 秒内发出的正常指令也会被吞，看 `state` 没变重发即可。开关状态以 retained 的 `state` 为准，面板的 `set` 不必勾 retain。
 - 设备 ID 只允许 `A-Z a-z 0-9 _ -`（1–32 位）；含 `/`、`+`、`#`、空格、引号等的会被回落为默认设备名（串口的 `Mode:` 行会打印实际使用的名字）。
 - 旧版 OneNET（产品 538578 + 作者小程序 + cmd 协议）已整体移除：旧配网参数（如旧 sign）升级后不再适用，必须按上面的 AIoT 流程重新配网。
-- OneNET 协议的「延时恢复」（倒计时式延时开关）未移植到自定义模式；定点时刻表是设备本地实现，双模式可用。
+- OneNET 协议的「延时恢复」（倒计时式延时开关）未移植到自定义模式。
 
 ## 编译与测试
 
@@ -108,5 +92,4 @@ arduino-cli compile -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disab
 ```bash
 g++ -Wall -Wextra -O2 custom-mqtt/test/test_onenet_aiot.cpp -o test_onenet && ./test_onenet
 g++ -Wall -Wextra -O2 custom-mqtt/test/test_mqtt_custom.cpp -o test_custom && ./test_custom
-g++ -Wall -Wextra -O2 custom-mqtt/test/test_schedule.cpp -o test_sched && ./test_sched
 ```

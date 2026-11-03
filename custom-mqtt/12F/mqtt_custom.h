@@ -96,7 +96,7 @@ static inline bool ykIsCustomBrokerHost(const char* host) {
 
 // 订阅后忽略窗口判定（与 OneNET 分支的 (long)(millis()-until)>=0 放行互为镜像，millis 环绕安全）：
 // now 还没到 until => 处于窗口内。retained 的 set 只会在订阅瞬间被重投，窗口内的 set 只清不执行，
-// 避免旧指令抵消断线期间时刻表/按键已造成的继电器状态；until=0（未布防）恒为窗口外。
+// 避免旧指令抵消断线期间本地按键已造成的继电器状态；until=0（未布防）恒为窗口外。
 static inline bool ykWithinIgnoreWindow(unsigned long nowMs, unsigned long untilMs) {
   // 先截到 32 位再看符号：millis 本就是 32 位环绕量，这样写在 64 位主机测试与
   // 32 位目标机上行为一致（直接 (long)(until-now) 在主机上不回绕、会误判）。

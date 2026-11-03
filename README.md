@@ -3,7 +3,7 @@
 阿里智能停服后，YKYC-001（ESP-12F / ESP8266）智能插座的自写固件存档与增强：
 
 - **原版路线**：连中国移动 OneNET，用作者的微信小程序远程控制（作者托管后台）
-- **本仓增强（推荐）**：支持中国移动 OneNET AIoT (TLS 8883) 物联网融合平台与自定义局域网 MQTT 双模式，用官方 OneJson 物模型或自建 broker 控制，并支持**设备本地定点时刻表**，彻底脱离原作者后台
+- **本仓增强（推荐）**：支持中国移动 OneNET AIoT (TLS 8883) 物联网融合平台与自定义局域网 MQTT 双模式，用官方 OneJson 物模型或自建 broker 控制，彻底脱离原作者后台
 
 固件原作者：MyYJjava（Gitee: `jjiangajava/yun_kong`，CSDN 教程《阿里智能YKYC-001智能插座，残血复活》《运控智能插座不能用了，自己写代码解决》）。上游仓库现行目录已删除源码，本仓库的源码从其 git 历史中找回，并按作者配置复现编译、与作者发布的 bin 校验等价；增强版为本仓在其最新版源码基础上的增量改动（OneNET 路径已升级为最新的 AIoT 物联网融合平台）。
 
@@ -11,7 +11,7 @@
 
 | 文件 | 适合 |
 |---|---|
-| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。477,760 B，sha256 `c856397086571bf2f9bd68636619a6cd8c14015049a731facd9514eee1312066`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT），双模式均支持本地时刻表 |
+| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。473,136 B，sha256 `751a7c873b4279dfbf3d2f934d1768b85fb8e5ce0c7ac65e20f8bcc1da3c5615`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
 | `bin/ykyc001_v2_compiled.bin` | 原版最新源码的复现编译，462,896 B（与作者 v2 bin 仅差 16 B 构建信息） |
 | `bin/author/ykyc001_v2_author.bin` | 作者发布的 v2 原版，462,912 B |
 | `bin/ykyc001_v1_compiled.bin` / `bin/author/ykyc001_v1_author.bin` | 第一版（CSDN 源码篇版本），存档 |
@@ -25,7 +25,6 @@
 - **双模式自由切换**：
   - **OneNET AIoT 模式（默认）**：支持 TLS 8883 (MQTTS) 安全加密直连中国移动 OneNET AIoT 物联网融合平台（`MiXfbNnY6r.mqttstls.acc.cmcconenet.cn:8883`），内置官方公开根证书，采用标准 OneJson 物模型（`switch1` / `total_switch`），支持云端控制与物理按键双向状态实时同步。配网页留空 MQTT 服务器即默认走此路径。
   - **自定义 MQTT 模式**：配网页填入自建 broker 地址（如 CasaOS Mosquitto），直连局域网，用任意 MQTT 客户端（Home Assistant、mqtt-panel 等）控制。
-- **本地定点时刻表（两模式通用）**：本地最多 4 条规则，到点动作，断网照常执行；文本形如 `0730,1,127;1730,0,127`（每天 07:30 开、17:30 关），经局域网维护页表单或 MQTT 主题 `yunkong/<id>/schedule/set` 配置，规则存 EEPROM、SNTP 对时（默认 UTC+8）。
 - **自定义 MQTT 协议要点**：控制 `yunkong/<id>/set`（`ON`/`OFF`），状态 `yunkong/<id>/state`（retained），在线 `yunkong/<id>/online`（retained + LWT）。
 
 ### 在本地终端计算 OneNET Token（安全防泄露）
@@ -51,7 +50,7 @@ python tools/onenet_tool.py token --dev ykyc001_dev1
 | 路径 | 说明 |
 |---|---|
 | `12F/12F.ino` | 原版最新固件源码（661 行）：延时修复、启动超时修复、本地状态页 |
-| `custom-mqtt/` | 增强版（OneNET AIoT TLS + 自建 MQTT）：源码、物模型、时刻表与单测 |
+| `custom-mqtt/` | 增强版（OneNET AIoT TLS + 自建 MQTT）：源码、物模型与单测 |
 | `docs/onenet_http_api.md` | OneNET AIoT RESTful HTTP API 使用指南（添加设备、云端控制等） |
 | `tools/` | OneNET AIoT 本地安全工具：Token 计算、设备创建/查询与仿真联调 |
 | `legacy/12F_v1.ino` | 第一版源码（381 行），即 CSDN 源码篇发布版 |
@@ -105,7 +104,7 @@ python tools/onenet_tool.py token --dev ykyc001_dev1
 arduino-cli compile --output-dir ./bin -b 'esp8266:esp8266:generic:xtal=80,vt=flash,exception=disabled,stacksmash=disabled,ssl=basic,mmu=3232,non32xfer=fast,ResetMethod=nodemcu,CrystalFreq=26,FlashFreq=40,FlashMode=dout,eesz=1M64,led=2,sdk=nonosdk_190703,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200' custom-mqtt/12F
 ```
 
-校验：自编原版 v2（462,896 B）与作者 v2 bin（462,912 B）仅差 16 B 构建信息，可读字符串全等。自定义版与 OneNET AIoT 版的纯逻辑（载荷解析、topic 构造、时刻表解析/触发）有主机侧测试（`custom-mqtt/test/`，g++ 可直接跑），全绿且通过变异探针；编译自有文件零警告。
+校验：自编原版 v2（462,896 B）与作者 v2 bin（462,912 B）仅差 16 B 构建信息，可读字符串全等。自定义版与 OneNET AIoT 版的纯逻辑（载荷解析、topic 构造）有主机侧测试（`custom-mqtt/test/`，g++ 可直接跑），全绿且通过变异探针；编译自有文件零警告。
 
 ## 配网
 
@@ -116,4 +115,4 @@ arduino-cli compile --output-dir ./bin -b 'esp8266:esp8266:generic:xtal=80,vt=fl
 
 长按按键 10 秒清配网重来。
 
-⚠️ **验证状态：以上固件仅通过编译（自有文件无警告）与主机侧逻辑单测，未经真机验证**——尤其 OneNET AIoT 的 TLS 握手、模式判定与时刻表行为，须刷机实测后才算数。 250V 市电设备：串口刷机全程禁止插市电，只用隔离 3.3V 供电；刷前先 `read_flash` 整片备份原厂固件（见 FLASHING.md）。
+⚠️ **验证状态：以上固件仅通过编译（自有文件无警告）与主机侧逻辑单测，未经真机验证**——尤其 OneNET AIoT 的 TLS 握手、模式判定行为，须刷机实测后才算数。 250V 市电设备：串口刷机全程禁止插市电，只用隔离 3.3V 供电；刷前先 `read_flash` 整片备份原厂固件（见 FLASHING.md）。

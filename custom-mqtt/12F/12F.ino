@@ -11,7 +11,6 @@
 #define useLittleFS
 #include <BGWiFiConfig.h>
 #include "mqtt_custom.h"
-#include "schedule.h"
 #include "onenet_aiot.h"
 
 // OneNET 官方公开根证书 (有效期至 2049-05-21)
@@ -75,7 +74,7 @@ BearSSL::X509List mqttcert(mqtt_ca_crt);
 /** 断电保持继电器逻辑状态；偏移避开 EEPROM 低地址，减少与库/SDK 冲突 */
 static const uint8_t kPersistMagic = 0xA7;
 static const int kPersistEepromOffset = 64;
-static const int kPersistEepromSize = 192;
+static const int kPersistEepromSize = 80;
 
 // 配网参数（全部存 EEPROM，不含硬编码敏感信息）
 String CLIENTID;     // umsg1: 设备名
@@ -87,15 +86,6 @@ String MQTT_PASS;    // umsg6: 自建 MQTT 密码
 bool customMqtt = false;
 int lastReportedFlag = -1;
 
-// 定点时刻表状态登记：规则与时区存 EEPROM 偏移 128 起（magic 0x5C）
-static const int kSchedEepromOffset = 128;
-static const uint8_t kSchedMagic = 0x5C;
-static const int SCHED_MAX_RULES = 4;
-YkRule schedRules[SCHED_MAX_RULES];
-int8_t tzOffsetHours = 8;
-bool schedClockInit = false;
-unsigned long lastSchedNtpTry = 0;
-long lastSchedMinute = -1;
 
 // 按钮 按下时间
 int buttonState = LOW;
@@ -131,14 +121,6 @@ unsigned long recoveryApEnteredAt = 0;
 const unsigned long RECOVERY_ENTER_MS = 120000;
 const unsigned long RECOVERY_AP_MS = 120000;
 
-// 继电器最后一次变化的时刻（Unix 分钟）
-uint32_t lastFlagChangeMin = 0;
-bool schedCatchupDone = false;
-
-static uint32_t nowEpochMinutesOrZero() {
-  time_t now = time(nullptr);
-  return now >= kClockValidEpoch ? (uint32_t)(now / 60) : 0;
-}
 
 // NTP 对时函数，TLS X.509 证书校验需要有效系统时间
 void setClock()
@@ -146,7 +128,7 @@ void setClock()
   if (clockReady) {
     return;
   }
-  configTime(tzOffsetHours * 3600, 0, "ntp.aliyun.com", "cn.pool.ntp.org", "pool.ntp.org");
+  configTime(8 * 3600, 0, "ntp.aliyun.com", "cn.pool.ntp.org", "pool.ntp.org");
   Serial.print("Waiting for NTP time sync: ");
   time_t now = time(nullptr);
   unsigned long started = millis();
@@ -189,8 +171,6 @@ void loadPersistedFlagState() {
     return;
   }
   flagState = v ? HIGH : LOW;
-  lastFlagChangeMin = (uint32_t)EEPROM.read(off + 2) | ((uint32_t)EEPROM.read(off + 3) << 8) |
-                      ((uint32_t)EEPROM.read(off + 4) << 16) | ((uint32_t)EEPROM.read(off + 5) << 24);
   EEPROM.end();
 }
 
@@ -199,12 +179,8 @@ void persistFlagState() {
   int off = kPersistEepromOffset;
   EEPROM.begin(kPersistEepromSize);
   if (EEPROM.read(off) != kPersistMagic || EEPROM.read(off + 1) != bit) {
-    lastFlagChangeMin = nowEpochMinutesOrZero();
     EEPROM.write(off, kPersistMagic);
     EEPROM.write(off + 1, bit);
-    for (int i = 0; i < 4; i++) {
-      EEPROM.write(off + 2 + i, (uint8_t)(lastFlagChangeMin >> (8 * i)));
-    }
     EEPROM.commit();
   }
   EEPROM.end();
@@ -215,165 +191,12 @@ void clearPersistedFlagState() {
   EEPROM.begin(kPersistEepromSize);
   EEPROM.write(off, 0);
   EEPROM.write(off + 1, 0);
-  for (int i = 0; i < 4; i++) {
-    EEPROM.write(off + 2 + i, 0);
-  }
-  lastFlagChangeMin = 0;
   EEPROM.write(0, 0);
   EEPROM.write(1, 0);
   EEPROM.commit();
   EEPROM.end();
 }
 
-// 时刻表 EEPROM 存取
-void loadSchedule() {
-  for (int i = 0; i < SCHED_MAX_RULES; i++) {
-    schedRules[i].enabled = 0;
-  }
-  tzOffsetHours = 8;
-  EEPROM.begin(kPersistEepromSize);
-  uint8_t magic = EEPROM.read(kSchedEepromOffset);
-  if (magic != kSchedMagic) {
-    EEPROM.end();
-    return;
-  }
-  int8_t tz = (int8_t)EEPROM.read(kSchedEepromOffset + 1);
-  if (tz >= -12 && tz <= 14) {
-    tzOffsetHours = tz;
-  }
-  for (int i = 0; i < SCHED_MAX_RULES; i++) {
-    int base = kSchedEepromOffset + 2 + i * 5;
-    YkRule r;
-    r.enabled = EEPROM.read(base) ? 1 : 0;
-    r.hour = EEPROM.read(base + 1);
-    r.minute = EEPROM.read(base + 2);
-    r.action = EEPROM.read(base + 3);
-    r.weekMask = EEPROM.read(base + 4);
-    if (r.enabled && ykRuleValid(&r)) {
-      schedRules[i] = r;
-    } else {
-      schedRules[i].enabled = 0;
-    }
-  }
-  EEPROM.end();
-}
-
-static inline bool eepromPut(int addr, uint8_t val) {
-  if (EEPROM.read(addr) != val) {
-    EEPROM.write(addr, val);
-    return true;
-  }
-  return false;
-}
-
-void saveSchedule() {
-  EEPROM.begin(kPersistEepromSize);
-  bool dirty = false;
-  dirty |= eepromPut(kSchedEepromOffset, kSchedMagic);
-  dirty |= eepromPut(kSchedEepromOffset + 1, (uint8_t)tzOffsetHours);
-  for (int i = 0; i < SCHED_MAX_RULES; i++) {
-    int base = kSchedEepromOffset + 2 + i * 5;
-    const YkRule& r = schedRules[i];
-    uint8_t en = (r.enabled && ykRuleValid(&r)) ? 1 : 0;
-    dirty |= eepromPut(base, en);
-    dirty |= eepromPut(base + 1, r.hour);
-    dirty |= eepromPut(base + 2, r.minute);
-    dirty |= eepromPut(base + 3, r.action);
-    dirty |= eepromPut(base + 4, r.weekMask);
-  }
-  if (dirty) {
-    EEPROM.commit();
-  }
-  EEPROM.end();
-}
-
-void clearScheduleStorage() {
-  EEPROM.begin(kPersistEepromSize);
-  EEPROM.write(kSchedEepromOffset, 0);
-  EEPROM.commit();
-  EEPROM.end();
-  for (int i = 0; i < SCHED_MAX_RULES; i++) {
-    schedRules[i].enabled = 0;
-  }
-}
-
-int currentScheduleText(char* buf, size_t bufSize) {
-  return ykFormatSchedule(schedRules, SCHED_MAX_RULES, buf, bufSize);
-}
-
-void schedApplyTimezone() {
-  configTime(tzOffsetHours * 3600, 0, "ntp.aliyun.com", "cn.pool.ntp.org", "pool.ntp.org");
-  schedClockInit = true;
-  lastSchedNtpTry = millis();
-}
-
-bool schedEnsureClock() {
-  if (!schedClockInit) {
-    schedApplyTimezone();
-  }
-  if (time(nullptr) >= kClockValidEpoch) {
-    return true;
-  }
-  if (!schedClockInit || millis() - lastSchedNtpTry > 60000UL) {
-    schedApplyTimezone();
-  }
-  return false;
-}
-
-void updateFlagStart();
-
-void scheduleCatchup(time_t now, const struct tm& ti) {
-  long minutesAgo = -1;
-  int lastAction = ykScheduleLastDue(schedRules, SCHED_MAX_RULES, ti.tm_wday, ti.tm_hour, ti.tm_min, &minutesAgo);
-  if (lastAction < 0 || minutesAgo < 0) {
-    return;
-  }
-  uint32_t nowMin = (uint32_t)(now / 60);
-  uint32_t ruleEpochMin = nowMin >= (uint32_t)minutesAgo ? nowMin - (uint32_t)minutesAgo : 0;
-  uint32_t changeMin = ykSanitizeChangeMin(lastFlagChangeMin, nowMin);
-  if (changeMin > 0 && changeMin >= ruleEpochMin) {
-    return;
-  }
-  int targetState = lastAction ? HIGH : LOW;
-  if (flagState != targetState) {
-    Serial.printf("schedule catchup -> %s (rule was %ldm ago)\n", lastAction ? "ON" : "OFF", minutesAgo);
-    flagState = targetState;
-    clearLocalRestore("schedule_catchup");
-    updateFlagStart();
-    persistFlagState();
-  }
-}
-
-void scheduleLoop() {
-  if (!schedEnsureClock()) {
-    return;
-  }
-  time_t now = time(nullptr);
-  if (!clockReady) {
-    clockReady = true;
-    Serial.println("schedule clock ready");
-  }
-  long minuteStamp = (long)(now / 60);
-  if (minuteStamp == lastSchedMinute) {
-    return;
-  }
-  lastSchedMinute = minuteStamp;
-  struct tm ti;
-  localtime_r(&now, &ti);
-  if (!schedCatchupDone) {
-    schedCatchupDone = true;
-    scheduleCatchup(now, ti);
-  }
-  int action = ykScheduleDue(schedRules, SCHED_MAX_RULES, ti.tm_wday, ti.tm_hour, ti.tm_min);
-  if (action < 0) {
-    return;
-  }
-  Serial.printf("schedule due -> %s\n", action ? "ON" : "OFF");
-  flagState = action ? HIGH : LOW;
-  clearLocalRestore("schedule_due");
-  updateFlagStart();
-  persistFlagState();
-}
 
 /** OTA 首页，须先于 OTAbegin */
 static const char otaIndexHtml[] PROGMEM =
@@ -393,13 +216,6 @@ static const char otaIndexHtml[] PROGMEM =
     "onsubmit=\"stopPolling();document.getElementById('status').innerHTML='升级中，请等待…'\">"
     "<input type=\"file\" name=\"otaupdate\"><br><br>"
     "<input type=\"submit\" value=\"开始升级\"></form>"
-    "<hr><h3>定点时刻表</h3>"
-    "<p style=\"font-size:12px;color:#666\">最多 4 条，格式：<code>0730,1,127;1730,0,127</code><br>"
-    "掩码：127=每天，31=工作日，96=周末。空=清除全部。</p>"
-    "<form method=\"POST\" action=\"/schedule\">"
-    "<label>规则文本：<input type=\"text\" name=\"sched\" id=\"sched\"></label><br><br>"
-    "<label>时区（UTC 偏移小时）：<input type=\"number\" name=\"tz\" id=\"tz\" min=\"-12\" max=\"14\" value=\"8\"></label><br><br>"
-    "<input type=\"submit\" value=\"保存时刻表\"></form>"
     "<hr><h3>恢复配网</h3>"
     "<p>清除已保存的 WiFi 与参数，重启后进入热点配网。</p>"
     "<form method=\"POST\" action=\"/otaclearcfg\" "
@@ -428,8 +244,6 @@ static const char otaIndexHtml[] PROGMEM =
     "h+='<tr><td>设备ID</td><td style=font-size:11px>'+esc(s.clientid||'—')+'</td></tr>';"
     "h+='</table>';"
     "document.getElementById('status').innerHTML=h;"
-    "var sc=document.getElementById('sched');if(sc&&document.activeElement!==sc)sc.value=s.schedule||'';"
-    "var tzi=document.getElementById('tz');if(tzi&&document.activeElement!==tzi)tzi.value=(s.tz!==undefined?s.tz:8);"
     "}catch(e){document.getElementById('status').innerHTML='解析失败'}"
     "pollTimer=setTimeout(fetchStatus,2000);"
     "};"
@@ -454,7 +268,6 @@ static const char* wifiStatusStr(int st) {
   }
 }
 
-void publishSchedule();
 
 void handleOtaClearCfg() {
   OTAserver.sendHeader("Connection", "close");
@@ -463,40 +276,11 @@ void handleOtaClearCfg() {
     "<p>已清除，正在重启并进入配网…</p></body></html>");
   mqttclient.disconnect();
   clearPersistedFlagState();
-  clearScheduleStorage();
   wifipw.clearWiFi();
   delay(400);
   ESP.restart();
 }
 
-void handleScheduleSave() {
-  String sched = OTAserver.arg("sched");
-  String tzStr = OTAserver.arg("tz");
-  YkRule parsed[SCHED_MAX_RULES];
-  int cnt = ykParseSchedule(sched.c_str(), parsed, SCHED_MAX_RULES);
-  if (cnt < 0) {
-    OTAserver.send(400, "text/html; charset=utf-8",
-      "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>ERR</title></head><body>"
-      "<p>时刻表格式错误，未修改。格式：0730,1,127;1730,0,127</p></body></html>");
-    return;
-  }
-  memcpy(schedRules, parsed, sizeof(schedRules));
-  if (tzStr.length() > 0) {
-    int tz = tzStr.toInt();
-    if (tz >= -12 && tz <= 14) {
-      tzOffsetHours = (int8_t)tz;
-    }
-  }
-  saveSchedule();
-  schedApplyTimezone();
-  lastSchedMinute = -1;
-  if (customMqtt && mqttclient_state == 1) {
-    publishSchedule();
-  }
-  OTAserver.send(200, "text/html; charset=utf-8",
-    "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>OK</title></head><body>"
-    "<p>时刻表已保存。</p></body></html>");
-}
 
 static String jsonEscape(const String& in) {
   String out;
@@ -527,10 +311,6 @@ void handleStatus() {
   json += ",\"flag_state\":" + String(flagState == HIGH ? "1" : "0");
   json += ",\"clientid\":\"" + jsonEscape(CLIENTID) + "\"";
   json += ",\"mqtt_mode\":\"" + String(customMqtt ? "custom" : "onenet") + "\"";
-  char schedBuf[128];
-  currentScheduleText(schedBuf, sizeof(schedBuf));
-  json += ",\"schedule\":\"" + String(schedBuf) + "\"";
-  json += ",\"tz\":" + String(tzOffsetHours);
   json += ",\"reconnect_delay_ms\":" + String(mqttReconnectDelayMs);
   json += "}";
   OTAserver.sendHeader("Access-Control-Allow-Origin", "*");
@@ -625,26 +405,6 @@ void receivedCallback(char* topicname, uint8_t* payload, unsigned int length)
       }
       return;
     }
-    char tSchedSet[112];
-    if (ykBuildTopic(tSchedSet, sizeof(tSchedSet), CLIENTID.c_str(), "schedule/set") > 0 &&
-        strcmp(topicname, tSchedSet) == 0) {
-      if (length < 200) {
-        char text[200];
-        memcpy(text, payload, length);
-        text[length] = '\0';
-        YkRule parsed[SCHED_MAX_RULES];
-        int cnt = ykParseSchedule(text, parsed, SCHED_MAX_RULES);
-        if (cnt >= 0) {
-          memcpy(schedRules, parsed, sizeof(schedRules));
-          saveSchedule();
-          Serial.println("schedule updated via mqtt");
-        } else {
-          Serial.println("schedule parse failed, keep old");
-        }
-      }
-      publishSchedule();
-      return;
-    }
     return;
   }
 
@@ -693,14 +453,6 @@ void mqttBackoff() {
   }
 }
 
-void publishSchedule() {
-  char topic[96];
-  char text[128];
-  if (ykBuildTopic(topic, sizeof(topic), CLIENTID.c_str(), "schedule") > 0 &&
-      currentScheduleText(text, sizeof(text)) >= 0) {
-    mqttclient.publish(topic, text, true);
-  }
-}
 
 void publishCustomState() {
   char topic[96];
@@ -772,12 +524,7 @@ void mqtt_update_custom() {
     mqttReconnectDelayMs = MQTT_RECONNECT_MIN_MS;
     mqttclient.subscribe(tSet, 1);
     customSetIgnoreUntil = millis() + 2500UL;
-    char tSchedSet[112];
-    if (ykBuildTopic(tSchedSet, sizeof(tSchedSet), CLIENTID.c_str(), "schedule/set") > 0) {
-      mqttclient.subscribe(tSchedSet, 1);
-    }
     mqttclient.publish(tOnline, "online", true);
-    publishSchedule();
     lastReportedFlag = -1;
     publishCustomState();
     Serial.print("custom mqtt connected -> ");
@@ -935,7 +682,6 @@ void button_hok(){
       {
         Serial.println("buttonState HIGH > 3s: reset config");
         clearPersistedFlagState();
-        clearScheduleStorage();
         wifipw.clearWiFi();
       }
     }
@@ -970,7 +716,6 @@ void setup()
   pinMode(FLAG, OUTPUT);
   pinMode(BUTTON, INPUT);
   loadPersistedFlagState();
-  loadSchedule();
   updateFlagStart();
   digitalWrite(LED_RED, HIGH);
   delay(100);
@@ -989,7 +734,6 @@ void setup()
   wifipw.OTAbegin();
   OTAserver.on("/otaclearcfg", HTTP_POST, handleOtaClearCfg);
   OTAserver.on("/status", HTTP_GET, handleStatus);
-  OTAserver.on("/schedule", HTTP_POST, handleScheduleSave);
 
   CLIENTID = cleanUMSG(wifipw.readUMSG(1));
   SIGN_MQTT = cleanUMSG(wifipw.readUMSG(2));
@@ -1034,7 +778,6 @@ void loop()
   wifipw.OTALoop();
   button_hok();
   localRestoreLoop();
-  scheduleLoop();
 
   if (!recoveryApActive) {
     if (!wifipw.OK(true) && WiFi.getMode() == WIFI_STA) {
