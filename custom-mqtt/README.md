@@ -12,12 +12,14 @@
 | WiFi 名称/密码 | 2.4G WiFi 的 SSID 与密码 |
 | 设备名称 | OneNET 模式下为设备名（默认 `ykyc001_dev1`）；自定义模式下为 topic 一段 |
 | OneNET Token | 连接鉴权密码（用 `tools/onenet_tool.py` 生成后填入；自定义模式留空） |
-| **服务器** | **填了即启用自定义模式**（broker 地址，如 `192.168.1.10`）；留空 = OneNET AIoT TLS 8883 |
+| **服务器** | **填了即启用自定义模式**（broker 地址，如 `192.168.1.10`）；留空 = OneNET AIoT TLS 8883。只填裸 IP/域名，**不要带 `mqtt://` 前缀**，带前缀连不上 |
 | 端口 | 留空 = 8883 (OneNET) / 1883 (自定义 MQTT) |
 | 产品ID/用户名 | OneNET 模式下为产品 ID (PID，默认 `MiXfbNnY6r`)；自定义模式下为 MQTT 用户名（可留空） |
 | 密码 | 仅自建 MQTT 使用；OneNET 模式留空 |
 
-改配置：长按按键 10 秒清配网重配，或开设备局域网 IP 的维护页用「清除配网并重启」。状态页 `/status` 的 `mqtt_mode` 字段会显示 `custom` / `onenet`。
+改配置：按住按键 3 秒以上松开清配网重配（按满 10 秒同样有效），或开设备局域网 IP 的维护页用「清除配网并重启」。状态页 `/status` 的 `mqtt_mode` 字段会显示 `custom` / `onenet`。
+
+> **真机状态（2026-11-03）**：自定义 MQTT 模式已在实机验证（配网、连接自建 Mosquitto、HA 控制均正常）；OneNET AIoT 的 TLS 握手尚未真机验证。另：自定义模式下设备不做 NTP 对时（时钟仅 OneNET TLS 路径用），状态页 NTP 显示 NO 属正常现象，不是故障。
 
 ---
 
@@ -70,6 +72,27 @@ python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <�
 | 控制 ↓ | `yunkong/socket1/set` | `ON`/`OFF`（也认 `1`/`0`、单字节 `0x01`/`0x00`） | QoS 1 订阅 |
 | 状态 ↑ | `yunkong/socket1/state` | `ON`/`OFF` | retained；连接时、每次状态变化时上报（含物理按键切换） |
 | 在线 ↑ | `yunkong/socket1/online` | `online`/`offline` | retained；offline 由 LWT 遗嘱发布 |
+
+### Home Assistant 接入（已真机实测）
+
+HA 的 MQTT 集成连上同一个 broker 后，在 `configuration.yaml` 加手动 MQTT 开关（设备 ID 换成自己的；定时开关用 HA 自动化按时间触发 `switch.turn_on/off` 实现）：
+
+```yaml
+mqtt:
+  switch:
+    - name: "云控插座"
+      unique_id: ykyc001_dev1_switch
+      command_topic: "yunkong/ykyc001_dev1/set"
+      state_topic: "yunkong/ykyc001_dev1/state"
+      availability_topic: "yunkong/ykyc001_dev1/online"
+      payload_on: "ON"
+      payload_off: "OFF"
+      payload_available: "online"
+      payload_not_available: "offline"
+      state_on: "ON"
+      state_off: "OFF"
+      retain: false
+```
 
 ---
 

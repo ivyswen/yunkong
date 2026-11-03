@@ -57,6 +57,8 @@ esptool.py --port COMx --baud 460800 write_flash --flash_mode dout --flash_freq 
 
 ## 首次配网
 
+> 本节按原版 bin（连作者 OneNET + 小程序）写；刷增强版 `ykyc001_v2_custom_mqtt.bin` 的配网字段与模式选择见 `custom-mqtt/README.md`（OneNET AIoT 或自建 MQTT 二选一，服务器栏只填裸 IP、勿带 `mqtt://` 前缀）。
+
 1. 上电后灯闪烁 = 未联网。手机连名为「WiFi配网」的热点（关掉手机的 WLAN 智能切换，提示无互联网选保持连接）
 2. 浏览器打开 192.168.22.1，填：家里 WiFi（必须 2.4G、WPA2）名称+密码；设备 ID = 微信小程序里「复制 ID」；加密串 = 「复制参数」；mode 选 1
 3. 提交后热点消失、灯变常亮（蓝=通电开，红=断电关）即上线，小程序里应显示在线
