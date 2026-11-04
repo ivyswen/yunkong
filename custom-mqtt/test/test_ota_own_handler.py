@@ -110,6 +110,15 @@ def main() -> None:
         "rb.toString()",
     ):
         assert fragment in verify, f"回读校验缺少片段: {fragment}"
+    # 暂存地址必须按 Update.begin 实际收到的尺寸复算：begin 传的是
+    # maxSketchSpace（整窗末端锚定），不是文件尺寸——首版用文件尺寸
+    # 算地址读偏 0xA000、必然误报不符（2026-11-04 20:28 真机命中，
+    # 安全失败未重启）。故 FILE_START 须把 maxSketchSpace 存入
+    # otaMaxSpace，校验按它复算窗口起点。
+    assert "otaMaxSpace = maxSketchSpace" in upload, "应保存 begin 的窗口尺寸"
+    assert "Update.begin(otaMaxSpace)" in upload, "begin 应使用保存的窗口尺寸变量"
+    assert "otaMaxSpace" in verify, "回读地址应按 begin 的窗口尺寸复算"
+    assert "(len + FLASH_SECTOR_SIZE" not in verify, "回读地址不得再按文件尺寸复算"
     end_branch = upload[upload.index("UPLOAD_FILE_END"):]
     assert "otaVerifyStaged(upload.totalSize" in end_branch, "收尾应回读校验暂存镜像"
     assert end_branch.index("otaVerifyStaged(upload.totalSize") < end_branch.index(

@@ -406,11 +406,14 @@ static uint32_t otaStartMs = 0;
 static MD5Builder otaRxMd5;
 static uint8_t otaFileModeByte = 0;
 static bool otaModeByteSaved = false;
+static uint32_t otaMaxSpace = 0;
 
 // 暂存区回读校验：暂存地址按内核 Updater::begin 的公式复算——
-// 暂存镜像位于可用空间末尾（FS 起点 − 镜像尺寸向上取整到扇区）。
+// begin 收到的是整窗尺寸 otaMaxSpace（非文件尺寸），暂存窗口末端
+// 锚定在 FS 起点：起点 = FS 起点 − otaMaxSpace 扇区取整。首版误用
+// 文件尺寸算地址、读偏 0xA000 必然误报，已按此修正（见测试契约）。
 static bool otaVerifyStaged(uint32_t len) {
-  uint32_t rounded = (len + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
+  uint32_t rounded = (otaMaxSpace + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
   uint32_t sketchRounded = (ESP.getSketchSize() + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
   uint32_t fsStart = sketchRounded + ESP.getFreeSketchSpace();
   uint32_t start = fsStart - rounded;
@@ -458,16 +461,17 @@ void handleOtaUpdateUpload() {
     otaUpdateOk = false;
     Serial.printf("OTA上传文件名: %s\n", upload.filename.c_str());
     uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    otaMaxSpace = maxSketchSpace;
     ESP.wdtDisable();
     otaLogSize = 0;
     otaStartMs = millis();
     otaRxMd5.begin();
     otaModeByteSaved = false;
-    if (!Update.begin(maxSketchSpace)) {
+    if (!Update.begin(otaMaxSpace)) {
       Serial.printf("OTA begin failed, err=%u\n", Update.getError());
     } else {
       Serial.printf("OTA begin ok: space=%u heap=%u t=%lu\n",
-                    maxSketchSpace, ESP.getFreeHeap(), otaStartMs);
+                    otaMaxSpace, ESP.getFreeHeap(), otaStartMs);
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     {  // 接收侧 MD5 累计（按到达顺序、整块计入），并保存镜像头模式字节
