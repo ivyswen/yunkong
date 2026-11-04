@@ -84,10 +84,10 @@ HA 的 MQTT 集成连上同一个 broker 后，在 `configuration.yaml` 加手�
 mqtt:
   switch:
     - name: "云控插座"
-      unique_id: ykyc001_dev1_switch
-      command_topic: "yunkong/ykyc001_dev1/set"
-      state_topic: "yunkong/ykyc001_dev1/state"
-      availability_topic: "yunkong/ykyc001_dev1/online"
+      unique_id: ykyc001_66f6a9_switch
+      command_topic: "yunkong/ykyc001_66f6a9/set"
+      state_topic: "yunkong/ykyc001_66f6a9/state"
+      availability_topic: "yunkong/ykyc001_66f6a9/online"
       payload_on: "ON"
       payload_off: "OFF"
       payload_available: "online"
