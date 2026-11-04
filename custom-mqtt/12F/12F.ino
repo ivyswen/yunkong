@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <MD5Builder.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
@@ -397,6 +398,54 @@ static const uint32_t OTA_WRITE_SLICE = 512;
 static bool otaUpdateOk = false;
 static uint32_t otaLogSize = 0;
 static uint32_t otaStartMs = 0;
+// 回读校验（2026-11-04 20:20 坐实）：本机 Flash 写入存在静默坏块——
+// OTA 写出的镜像曾带伤运行（Web 访问必崩循环），同 bin 经 esptool
+// 写后校验串口重刷即愈。Updater 的 MD5 只算内存缓冲、从不回读，
+// 故接收时自行累计 MD5，Update.end 后回读暂存区逐块比对，不一致
+// 绝不置成功（不重启、旧固件完好，可直接重试或改串口刷）。
+static MD5Builder otaRxMd5;
+static uint8_t otaFileModeByte = 0;
+static bool otaModeByteSaved = false;
+
+// 暂存区回读校验：暂存地址按内核 Updater::begin 的公式复算——
+// 暂存镜像位于可用空间末尾（FS 起点 − 镜像尺寸向上取整到扇区）。
+static bool otaVerifyStaged(uint32_t len) {
+  uint32_t rounded = (len + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
+  uint32_t sketchRounded = (ESP.getSketchSize() + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
+  uint32_t fsStart = sketchRounded + ESP.getFreeSketchSpace();
+  uint32_t start = fsStart - rounded;
+  MD5Builder rb;
+  rb.begin();
+  static uint8_t buf[1024];
+  uint32_t done = 0;
+  bool first = true;
+  while (done < len) {
+    uint32_t want = len - done;
+    if (want > sizeof(buf)) {
+      want = sizeof(buf);
+    }
+    uint32_t rd = (want + 3) & ~3u;  // flashRead 需 4 字节对齐，多读的不入 MD5
+    if (!ESP.flashRead(start + done, buf, rd)) {
+      Serial.printf("OTA verify: flashRead failed at %u\n", done);
+      return false;
+    }
+    if (first) {
+      // Updater 写首扇区时可能把镜像头 flash-mode 字节改成本机模式，
+      // 回读比对前还原为文件原值（与 Updater 自身 MD5 的处理一致）。
+      buf[2] = otaFileModeByte;
+      first = false;
+    }
+    rb.add(buf, (uint16_t)want);
+    done += want;
+    yield();
+  }
+  rb.calculate();
+  String got = rb.toString();
+  bool match = (got == otaRxMd5.toString());
+  Serial.printf("OTA verify: staged md5 %s (rx %s)\n",
+                match ? "MATCH" : got.c_str(), otaRxMd5.toString().c_str());
+  return match;
+}
 
 void handleOtaRoot() {
   OTAserver.sendHeader("Connection", "close");
@@ -412,6 +461,8 @@ void handleOtaUpdateUpload() {
     ESP.wdtDisable();
     otaLogSize = 0;
     otaStartMs = millis();
+    otaRxMd5.begin();
+    otaModeByteSaved = false;
     if (!Update.begin(maxSketchSpace)) {
       Serial.printf("OTA begin failed, err=%u\n", Update.getError());
     } else {
@@ -419,6 +470,20 @@ void handleOtaUpdateUpload() {
                     maxSketchSpace, ESP.getFreeHeap(), otaStartMs);
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
+    {  // 接收侧 MD5 累计（按到达顺序、整块计入），并保存镜像头模式字节
+      uint32_t m = upload.currentSize;
+      uint8_t* q = upload.buf;
+      if (!otaModeByteSaved && upload.totalSize - upload.currentSize == 0 && m > 2) {
+        otaFileModeByte = q[2];
+        otaModeByteSaved = true;
+      }
+      while (m > 0) {
+        uint16_t step = m > 4096 ? 4096 : (uint16_t)m;
+        otaRxMd5.add(q, step);
+        q += step;
+        m -= step;
+      }
+    }
     uint32_t remaining = upload.currentSize;
     uint8_t* p = upload.buf;
     while (remaining > 0) {
@@ -440,9 +505,14 @@ void handleOtaUpdateUpload() {
     uint32_t endStart = millis();
     Serial.printf("OTA end start: total=%u t=%lu\n", upload.totalSize, endStart);
     if (Update.end(true)) {
-      otaUpdateOk = true;
-      Serial.printf("OTA uploaded ok: %u bytes, end took %lu ms, restart to apply\n",
-                    upload.totalSize, millis() - endStart);
+      otaRxMd5.calculate();
+      if (otaVerifyStaged(upload.totalSize)) {
+        otaUpdateOk = true;
+        Serial.printf("OTA uploaded ok: %u bytes, end took %lu ms, restart to apply\n",
+                      upload.totalSize, millis() - endStart);
+      } else {
+        Serial.println("OTA verify FAILED: staged image corrupt, NOT restarting (old firmware intact)");
+      }
     } else {
       Serial.printf("OTA upload failed, err=%u, end took %lu ms\n",
                     Update.getError(), millis() - endStart);

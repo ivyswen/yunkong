@@ -94,6 +94,28 @@ def main() -> None:
     assert "32 * 1024" in upload or "32768" in upload, "应每 32KB 打一行进度日志"
     assert "millis()" in upload, "进度与收尾日志应带时间戳以便定位阻塞点"
 
+    # 第三轮根因（2026-11-04 20:20 真机坐实）：OTA 写出的镜像带静默
+    # 坏块——同 bin 串口重刷（esptool 写后校验）后 Web 访问不再崩溃
+    # 循环。Updater 的 MD5 只算内存缓冲、从不回读 Flash，故上传处理
+    # 必须自带回读校验：接收时算 MD5，Update.end 后回读暂存区逐块
+    # 比对，一致才置 otaUpdateOk（才回 OK 才重启）；不一致保持 FAIL。
+    assert "MD5Builder" in source, "应使用 MD5Builder 做回读校验"
+    assert "otaRxMd5.add(" in upload, "接收时应逐块累计 MD5"
+    verify = function_body(source, "bool otaVerifyStaged(uint32_t len)")
+    for fragment in (
+        "ESP.flashRead(",
+        "ESP.getSketchSize()",
+        "ESP.getFreeSketchSpace()",
+        "otaFileModeByte",
+        "rb.toString()",
+    ):
+        assert fragment in verify, f"回读校验缺少片段: {fragment}"
+    end_branch = upload[upload.index("UPLOAD_FILE_END"):]
+    assert "otaVerifyStaged(upload.totalSize" in end_branch, "收尾应回读校验暂存镜像"
+    assert end_branch.index("otaVerifyStaged(upload.totalSize") < end_branch.index(
+        "otaUpdateOk = true"
+    ), "只有回读校验通过后才能置成功标志"
+
     print("own OTA handler (sliced write + wdt feed) contract: OK")
 
 
