@@ -389,8 +389,14 @@ void handleStatus() {
 //    被饿死：上传约 8 秒 Soft WDT reset + Exception (4)，同源码 ELF 解码
 //    堆栈落在 UpdaterClass::write → spi_flash_write_page_break。
 // 这里在已配网（STA）时无条件注册并 begin，上传按片写、每片喂狗让出 CPU。
+// 追加实测（同日晚）：切片版仍在约 7.6 秒 Soft WDT 崩溃，且小 15KB 的
+// 作者 bin 对照实验同样崩、epc 落在 ROM Wait_SPI_Idle——单次 Flash 擦/写
+// 操作本身阻塞超过软狗窗口，切片间喂狗救不了操作内部。故上传全程关
+// 软狗（ESP.wdtDisable，硬件狗仍在），结束/中止恢复，并打进度日志。
 static const uint32_t OTA_WRITE_SLICE = 512;
 static bool otaUpdateOk = false;
+static uint32_t otaLogSize = 0;
+static uint32_t otaStartMs = 0;
 
 void handleOtaRoot() {
   OTAserver.sendHeader("Connection", "close");
@@ -403,8 +409,14 @@ void handleOtaUpdateUpload() {
     otaUpdateOk = false;
     Serial.printf("OTA上传文件名: %s\n", upload.filename.c_str());
     uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    ESP.wdtDisable();
+    otaLogSize = 0;
+    otaStartMs = millis();
     if (!Update.begin(maxSketchSpace)) {
       Serial.printf("OTA begin failed, err=%u\n", Update.getError());
+    } else {
+      Serial.printf("OTA begin ok: space=%u heap=%u t=%lu\n",
+                    maxSketchSpace, ESP.getFreeHeap(), otaStartMs);
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     uint32_t remaining = upload.currentSize;
@@ -419,21 +431,33 @@ void handleOtaUpdateUpload() {
       ESP.wdtFeed();
       yield();
     }
+    if (upload.totalSize - otaLogSize >= 32 * 1024) {
+      otaLogSize = upload.totalSize;
+      Serial.printf("OTA prog %u t=%lu heap=%u\n",
+                    upload.totalSize, millis(), ESP.getFreeHeap());
+    }
   } else if (upload.status == UPLOAD_FILE_END) {
+    uint32_t endStart = millis();
+    Serial.printf("OTA end start: total=%u t=%lu\n", upload.totalSize, endStart);
     if (Update.end(true)) {
       otaUpdateOk = true;
-      Serial.printf("OTA uploaded ok: %u bytes, restart to apply\n", upload.totalSize);
+      Serial.printf("OTA uploaded ok: %u bytes, end took %lu ms, restart to apply\n",
+                    upload.totalSize, millis() - endStart);
     } else {
-      Serial.printf("OTA upload failed, err=%u\n", Update.getError());
+      Serial.printf("OTA upload failed, err=%u, end took %lu ms\n",
+                    Update.getError(), millis() - endStart);
     }
+    ESP.wdtEnable(0);
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     Update.end();
+    ESP.wdtEnable(0);
     Serial.println("OTA upload aborted");
   }
   yield();
 }
 
 void handleOtaUpdateDone() {
+  ESP.wdtEnable(0);  // 兜底恢复软狗（正常路径已在 END/ABORTED 恢复，重复调用无害）
   OTAserver.sendHeader("Connection", "close");
   OTAserver.send(200, "text/plain", otaUpdateOk ? "OK" : "FAIL");
   if (otaUpdateOk) {

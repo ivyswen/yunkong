@@ -81,6 +81,19 @@ def main() -> None:
     assert '"OK"' in done and '"FAIL"' in done, "完成处理应回 OK/FAIL（与库语义一致）"
     assert "ESP.restart()" in done, "成功后应重启运行新固件"
 
+    # 第二轮根因证据（2026-11-04 19:29 对照实验）：小 15KB 的作者 bin
+    # 同样在约 7.6 秒 Soft WDT 崩溃，epc 落在 ROM Wait_SPI_Idle——单次
+    # Flash 擦/写操作本身阻塞超过软看门狗窗口，切片间喂狗救不了操作内
+    # 部。因此上传全程关软狗（硬件狗仍在），并加进度/计时日志定位。
+    assert "ESP.wdtDisable()" in upload, "上传开始应关软看门狗"
+    assert upload.index("ESP.wdtDisable()") < upload.index("Update.begin("), (
+        "关软狗应在 Update.begin 之前"
+    )
+    assert upload.count("ESP.wdtEnable(0)") >= 2, "结束与中止两路都应恢复软看门狗"
+    assert "upload.totalSize" in upload, "进度日志应使用 upload.totalSize"
+    assert "32 * 1024" in upload or "32768" in upload, "应每 32KB 打一行进度日志"
+    assert "millis()" in upload, "进度与收尾日志应带时间戳以便定位阻塞点"
+
     print("own OTA handler (sliced write + wdt feed) contract: OK")
 
 
