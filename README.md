@@ -11,7 +11,7 @@
 
 | 文件 | 适合 |
 |---|---|
-| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。477,296 B，sha256 `a23d55d965c9d05fc03e0cb05c5ff3b8e67aa140501b54dd0818c38816409098`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
+| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。477,376 B，sha256 `f18bb3c21930ad64b2b2d41bfca375450fd7c7b93e98f7cec2469204aea6dc3a`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
 | `bin/ykyc001_v2_compiled.bin` | 原版最新源码的复现编译，462,896 B（与作者 v2 bin 仅差 16 B 构建信息） |
 | `bin/author/ykyc001_v2_author.bin` | 作者发布的 v2 原版，462,912 B |
 | `bin/ykyc001_v1_compiled.bin` / `bin/author/ykyc001_v1_author.bin` | 第一版（CSDN 源码篇版本），存档 |
