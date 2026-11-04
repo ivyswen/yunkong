@@ -242,7 +242,7 @@ void clearPersistedFlagState() {
 }
 
 
-/** OTA 首页，须先于 OTAbegin */
+/** OTA 维护页（自有根页处理 handleOtaRoot 引用） */
 static const char otaIndexHtml[] PROGMEM =
     "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -379,6 +379,68 @@ void handleStatus() {
   json += "}";
   OTAserver.sendHeader("Access-Control-Allow-Origin", "*");
   OTAserver.send(200, "application/json", json);
+}
+
+// ---- 自有 OTA 处理（替代库 OTAbegin 的注册与上传逻辑） ----
+// 库的问题有二（2026-11-04 真机实锤）：
+// 1) OTAbegin() 仅在调用瞬间 WiFi 已连通才注册 "/"、"/otaupdate" 并
+//    begin 服务器，慢速开机整段运行期无维护页（恢复热点根页 404）；
+// 2) 其上传回调把整块数据一次交给 Update.write，写 Flash 期间软看门狗
+//    被饿死：上传约 8 秒 Soft WDT reset + Exception (4)，同源码 ELF 解码
+//    堆栈落在 UpdaterClass::write → spi_flash_write_page_break。
+// 这里在已配网（STA）时无条件注册并 begin，上传按片写、每片喂狗让出 CPU。
+static const uint32_t OTA_WRITE_SLICE = 512;
+static bool otaUpdateOk = false;
+
+void handleOtaRoot() {
+  OTAserver.sendHeader("Connection", "close");
+  OTAserver.send(200, "text/html; charset=utf-8", String(FPSTR(otaIndexHtml)));
+}
+
+void handleOtaUpdateUpload() {
+  HTTPUpload& upload = OTAserver.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    otaUpdateOk = false;
+    Serial.printf("OTA上传文件名: %s\n", upload.filename.c_str());
+    uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (!Update.begin(maxSketchSpace)) {
+      Serial.printf("OTA begin failed, err=%u\n", Update.getError());
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    uint32_t remaining = upload.currentSize;
+    uint8_t* p = upload.buf;
+    while (remaining > 0) {
+      uint32_t slice = remaining > OTA_WRITE_SLICE ? OTA_WRITE_SLICE : remaining;
+      if (Update.write(p, slice) != slice) {
+        break;  // 错误已锁存在 Update 中，完成处理回 FAIL，不重启可直接重试
+      }
+      p += slice;
+      remaining -= slice;
+      ESP.wdtFeed();
+      yield();
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) {
+      otaUpdateOk = true;
+      Serial.printf("OTA uploaded ok: %u bytes, restart to apply\n", upload.totalSize);
+    } else {
+      Serial.printf("OTA upload failed, err=%u\n", Update.getError());
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    Update.end();
+    Serial.println("OTA upload aborted");
+  }
+  yield();
+}
+
+void handleOtaUpdateDone() {
+  OTAserver.sendHeader("Connection", "close");
+  OTAserver.send(200, "text/plain", otaUpdateOk ? "OK" : "FAIL");
+  if (otaUpdateOk) {
+    Serial.flush();
+    delay(200);
+    ESP.restart();
+  }
 }
 
 void enterRecoveryAP() {
@@ -806,11 +868,19 @@ void setup()
   wifipw.setZDYhtml(customHtml);
   wifipw.setNumUMSG(6);
   wifipw.begin();
-  wifipw.setOTATimeOut(30);
-  wifipw.setOTAhtml(String(FPSTR(otaIndexHtml)));
-  wifipw.OTAbegin();
-  OTAserver.on("/otaclearcfg", HTTP_POST, handleOtaClearCfg);
-  OTAserver.on("/status", HTTP_GET, handleStatus);
+  // 自有 OTA 注册（替代库 OTAbegin，原因见 handleOtaUpdateUpload 上方注释）：
+  // 已配网时 begin() 后为 STA 模式，此时无条件注册维护页与上传处理并启动
+  // 服务器，与开机时 WiFi 连接快慢无关；配网 AP 模式不启动（避免与配网
+  // 服务器端口冲突），配网提交后设备重启、届时走 STA 路径。loop 里仍由
+  // wifipw.OTALoop() 驱动 handleClient（其内部同样以已配网为条件）。
+  if (WiFi.getMode() == WIFI_STA) {
+    OTAserver.on("/", HTTP_GET, handleOtaRoot);
+    OTAserver.on("/otaupdate", HTTP_POST, handleOtaUpdateDone, handleOtaUpdateUpload);
+    OTAserver.on("/otaclearcfg", HTTP_POST, handleOtaClearCfg);
+    OTAserver.on("/status", HTTP_GET, handleStatus);
+    OTAserver.begin();
+    Serial.println("OTA server started (own handler)");
+  }
 
   CLIENTID = cleanUMSG(wifipw.readUMSG(1));
   SIGN_MQTT = cleanUMSG(wifipw.readUMSG(2));
