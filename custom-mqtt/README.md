@@ -124,4 +124,5 @@ g++ -Wall -Wextra -O2 custom-mqtt/test/test_mqtt_custom.cpp -o test_custom && ./
 python3 custom-mqtt/test/test_provisioning_html.py
 python3 custom-mqtt/test/test_fw_version.py
 python3 custom-mqtt/test/test_button_clear_restart.py
+python3 custom-mqtt/test/test_clear_provisioning.py
 ```

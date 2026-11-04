@@ -314,6 +314,24 @@ static const char* wifiStatusStr(int st) {
 }
 
 
+// 双保险清配网（网页与按键共用）：不依赖库 clearWiFi() 的静默删除——
+// 删两个配置文件并回读校验，再擦 SDK 自己持久化的 WiFi 凭据，最后重启；
+// 配网热点只在开机读不到配置时开启，故必须重启收尾。每步结果打串口，失效不再静默。
+static void clearProvisioningAndRestart() {
+  bool fsOk = LittleFS.begin();
+  bool rmWifi = LittleFS.remove("/bgwificonfig/wifiset.txt");
+  bool rmUmsg = LittleFS.remove("/bgwificonfig/umsg.txt");
+  bool wifiGone = !LittleFS.exists("/bgwificonfig/wifiset.txt");
+  bool umsgGone = !LittleFS.exists("/bgwificonfig/umsg.txt");
+  WiFi.disconnect(true);
+  bool sdkErased = ESP.eraseConfig();
+  Serial.printf("clearProvisioning: fs=%d rmWifi=%d rmUmsg=%d wifiGone=%d umsgGone=%d sdkErased=%d, restarting\n",
+                fsOk, rmWifi, rmUmsg, wifiGone, umsgGone, sdkErased);
+  Serial.flush();
+  delay(400);
+  ESP.restart();
+}
+
 void handleOtaClearCfg() {
   OTAserver.sendHeader("Connection", "close");
   OTAserver.send(200, "text/html; charset=utf-8",
@@ -321,9 +339,7 @@ void handleOtaClearCfg() {
     "<p>已清除，正在重启并进入配网…</p></body></html>");
   mqttclient.disconnect();
   clearPersistedFlagState();
-  wifipw.clearWiFi();
-  delay(400);
-  ESP.restart();
+  clearProvisioningAndRestart();
 }
 
 
@@ -729,12 +745,7 @@ void button_hok(){
       {
         Serial.println("buttonState HIGH > 3s: reset config");
         clearPersistedFlagState();
-        wifipw.clearWiFi();
-        // clearWiFi 只删配置不重启；配网热点只在开机读不到配置时开启，
-        // 必须重启才能进配网（与维护页清配网路径一致）
-        Serial.println("config cleared, restarting to provisioning");
-        delay(400);
-        ESP.restart();
+        clearProvisioningAndRestart();
       }
     }
   } else {
