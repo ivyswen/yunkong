@@ -730,6 +730,11 @@ void button_hok(){
         Serial.println("buttonState HIGH > 3s: reset config");
         clearPersistedFlagState();
         wifipw.clearWiFi();
+        // clearWiFi 只删配置不重启；配网热点只在开机读不到配置时开启，
+        // 必须重启才能进配网（与维护页清配网路径一致）
+        Serial.println("config cleared, restarting to provisioning");
+        delay(400);
+        ESP.restart();
       }
     }
   } else {
