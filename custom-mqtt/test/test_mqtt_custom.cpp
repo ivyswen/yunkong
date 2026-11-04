@@ -77,6 +77,24 @@ int main() {
   CHECK(!ykIsCustomBrokerHost("MiXfbNnY6r.mqttstls.acc.cmcconenet.cn"));
   CHECK(!ykIsCustomBrokerHost("mqttstls.heclouds.com"));
 
-  if (fails == 0) printf("ALL PASS\n");
+  // MAC 衍生默认设备 ID
+  uint8_t mac1[6] = {0xCC, 0x50, 0xE3, 0x1A, 0x2B, 0x3C};
+  char devBuf[32];
+  CHECK(ykFormatDeviceIdFromMac(devBuf, sizeof(devBuf), mac1) == 14);
+  CHECK(strcmp(devBuf, "ykyc001_1a2b3c") == 0);
+  CHECK(ykDeviceIdValid(devBuf));
+
+  uint8_t mac2[6] = {0x00, 0x11, 0x22, 0x01, 0x0A, 0xFF};
+  CHECK(ykFormatDeviceIdFromMac(devBuf, sizeof(devBuf), mac2) == 14);
+  CHECK(strcmp(devBuf, "ykyc001_010aff") == 0);
+  CHECK(ykDeviceIdValid(devBuf));
+
+  // 边界保护
+  char smallBuf[14];
+  CHECK(ykFormatDeviceIdFromMac(smallBuf, sizeof(smallBuf), mac1) == -1); // 空间不足
+  CHECK(ykFormatDeviceIdFromMac(NULL, 32, mac1) == -1);
+  CHECK(ykFormatDeviceIdFromMac(devBuf, sizeof(devBuf), NULL) == -1);
+
+    if (fails == 0) printf("ALL PASS\n");
   return fails ? 1 : 0;
 }

@@ -8,6 +8,7 @@ OneNET AIoT (物联网融合平台) 调试与管理工具
 
 import sys
 import os
+import re
 import time
 import json
 import base64
@@ -255,17 +256,35 @@ def cmd_test_mqtt(args):
         client.loop_stop()
         client.disconnect()
 
+def derive_device_id_from_mac(mac_input: str) -> str:
+    """根据 MAC 地址推导设备 ID: ykyc001_xxxxxx (全小写)。
+    支持:
+    - 完整 MAC (带冒号/连字符/点或连续十六进制): AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF, aabbccddeeff
+    - MAC 后六位十六进制: DDEEFF, ddeeff
+    """
+    if not mac_input:
+        raise ValueError("MAC 地址不能为空")
+    clean = re.sub(r"[^0-9a-fA-F]", "", mac_input).lower()
+    if len(clean) == 12:
+        postfix = clean[6:]
+    elif len(clean) == 6:
+        postfix = clean
+    else:
+        raise ValueError(f"无法识别的 MAC 地址或后六位格式: '{mac_input}' (有效十六进制字符数应为 6 或 12)")
+    return f"ykyc001_{postfix}"
+
 def main():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--pid", default=ENV_PID or "MiXfbNnY6r", help="产品 ID (PID)，默认: MiXfbNnY6r")
     common.add_argument("--key", default=ENV_ACCESS_KEY, help="产品 AccessKey，或设置环境变量 ONENET_ACCESS_KEY")
+    common.add_argument("--mac", default=None, help="设备 MAC 地址（全长或后六位），用于自动推导 ykyc001_xxxxxx")
 
     parser = argparse.ArgumentParser(description="OneNET AIoT (物联网融合平台) 调试与管理工具", parents=[common])
     subparsers = parser.add_subparsers(dest="cmd")
     
     # 1. token
     p_token = subparsers.add_parser("token", help="计算鉴权 Token", parents=[common])
-    p_token.add_argument("--dev", default=None, help="设备名称 (若留空则生成产品级Token)")
+    p_token.add_argument("--dev", default=None, help="设备名称 (若提供 --mac 可省略；留空且未提供 --mac 则生成产品级Token)")
     p_token.add_argument("--method", default="sha256", choices=["sha256", "sha1", "md5"], help="签名算法 (默认 sha256)")
     p_token.add_argument("--et", default=None, help="过期 Unix 时间戳 (秒)")
     
@@ -274,17 +293,17 @@ def main():
     
     # 3. create
     p_create = subparsers.add_parser("create", help="创建新设备", parents=[common])
-    p_create.add_argument("--name", required=True, help="设备名称 (例如: ykyc001_dev1)")
+    p_create.add_argument("--name", default=None, help="设备名称 (若提供 --mac 可省略，例如: ykyc001_dev1)")
     p_create.add_argument("--desc", default="YKYC-001 智能插座", help="设备描述")
     
     # 4. set
     p_set = subparsers.add_parser("set", help="下发云端开关控制", parents=[common])
-    p_set.add_argument("--dev", required=True, help="设备名称 (例如: ykyc001_dev1)")
+    p_set.add_argument("--dev", default=None, help="设备名称 (若提供 --mac 可省略)")
     p_set.add_argument("--state", required=True, choices=["on", "off", "1", "0"], help="开关状态: on 或 off")
     
     # 5. test-mqtt
     p_mqtt = subparsers.add_parser("test-mqtt", help="模拟设备连接 MQTT 并监听控制", parents=[common])
-    p_mqtt.add_argument("--dev", required=True, help="设备名称 (例如: ykyc001_dev1)")
+    p_mqtt.add_argument("--dev", default=None, help="设备名称 (若提供 --mac 可省略)")
     p_mqtt.add_argument("--tls", action="store_true", help="启用 TLS 8883 加密连接 (默认: 明文 1883)")
     
     args = parser.parse_args()
@@ -294,6 +313,25 @@ def main():
 
     if not args.key:
         print("错误: 缺少 AccessKey，请通过 --key 参数或环境变量 ONENET_ACCESS_KEY 提供。")
+        return
+
+    # 若提供了 --mac 则自动推导设备名称
+    if getattr(args, "mac", None):
+        try:
+            mac_dev = derive_device_id_from_mac(args.mac)
+        except ValueError as e:
+            print(f"错误: {e}")
+            return
+        if getattr(args, "name", None) is None:
+            args.name = mac_dev
+        if getattr(args, "dev", None) is None:
+            args.dev = mac_dev
+
+    if args.cmd == "create" and not args.name:
+        print("错误: 创建设备需要指定 --name 或 --mac。")
+        return
+    if args.cmd in ("set", "test-mqtt") and not args.dev:
+        print(f"错误: {args.cmd} 命令需要指定 --dev 或 --mac。")
         return
         
     if args.cmd == "token":

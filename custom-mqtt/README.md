@@ -10,7 +10,7 @@
 | 字段 | 含义 |
 |---|---|
 | WiFi 名称/密码 | 2.4G WiFi 的 SSID 与密码 |
-| 设备名称 | OneNET 模式下为设备名（默认 `ykyc001_dev1`）；自定义模式下为 topic 一段 |
+| 设备名称 | OneNET 模式下为设备名；自定义模式下为 topic 一段。留空自动使用硬件 MAC 后六位推导的默认 ID：`ykyc001_xxxxxx` |
 | OneNET Token | 连接鉴权密码（用 `tools/onenet_tool.py` 生成后填入；自定义模式留空） |
 | **服务器** | **填了即启用自定义模式**（broker 地址，如 `192.168.1.10`）；留空 = OneNET AIoT TLS 8883。只填裸 IP/域名，**不要带 `mqtt://` 前缀**，带前缀连不上 |
 | 端口 | 留空 = 8883 (OneNET) / 1883 (自定义 MQTT) |
@@ -29,8 +29,10 @@
 使用仓库自带的调试工具计算 10 年免维护 Token（密钥仅保留在本地终端，不入库）：
 
 ```bash
-# 设备级 Token（推荐，仅授权该设备）
-python tools/onenet_tool.py token --pid MiXfbNnY6r --dev ykyc001_dev1 --key <你的AccessKey>
+# 设备级 Token（推荐：直接传入设备 MAC 或后六位，自动推导 ykyc001_xxxxxx）
+python tools/onenet_tool.py token --pid MiXfbNnY6r --mac 1a2b3c --key <你的AccessKey>
+# 或直接指定具体设备名称
+python tools/onenet_tool.py token --pid MiXfbNnY6r --dev ykyc001_1a2b3c --key <你的AccessKey>
 
 # 或产品级 Token（该产品下所有插座通用）
 python tools/onenet_tool.py token --pid MiXfbNnY6r --key <你的AccessKey>
@@ -38,7 +40,8 @@ python tools/onenet_tool.py token --pid MiXfbNnY6r --key <你的AccessKey>
 
 ### 2. 注册设备（如未注册）
 ```bash
-python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <你的AccessKey>
+# 支持直接用 --mac 创建设备，或显式指定 --name
+python tools/onenet_tool.py create --pid MiXfbNnY6r --mac 1a2b3c --key <你的AccessKey>
 
 > 电脑联调：`python tools/onenet_tool.py test-mqtt --help` 可模拟设备连接平台收发物模型消息（TLS 用随仓 `tools/onenet_root_ca.pem` 做根证书校验，与固件同源）。
 ```
@@ -48,7 +51,7 @@ python tools/onenet_tool.py create --pid MiXfbNnY6r --name ykyc001_dev1 --key <�
 2. 手机连接插座热点（`WiFi配网`，BGWiFiConfig 默认名），打开浏览器访问 `http://192.168.22.1`。
 3. 填入：
    - WiFi 名称与密码
-   - 设备名称：`ykyc001_dev1`
+   - 设备名称：**可直接留空**（配网页会自动提示当前设备的 `ykyc001_xxxxxx`，留空提交即生效）；亦可手动填写自定义名称
    - OneNET Token：粘贴刚才计算出的 `version=2018-10-31&...` 字符串
    - 服务器、端口、产品ID、密码全部留空（自动默认 PID `MiXfbNnY6r` 与 TLS 8883）。
 4. 点击「开始配网」，设备自动重启并通过 TLS 8883 连接 OneNET AIoT。

@@ -194,8 +194,9 @@ YKYC-001 采用中国移动官方 **OneJson** 物模型协议，支持 `switch1`
 # 环境变量设置 AccessKey（避免明文留在历史记录中）
 export ONENET_ACCESS_KEY="<你的AccessKey>"
 
-# 1. 创建新设备
-python tools/onenet_tool.py create --name ykyc001_dev2 --desc "二号插座"
+# 1. 创建新设备（支持 --mac 自动推导 ykyc001_xxxxxx，也可直接指定 --name）
+python tools/onenet_tool.py create --mac 1a2b3c --desc "二号插座"
+# 或指定名称：python tools/onenet_tool.py create --name ykyc001_dev2 --desc "二号插座"
 
 # 2. 查询设备列表与在线状态
 python tools/onenet_tool.py list

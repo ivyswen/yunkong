@@ -102,6 +102,8 @@ def main() -> None:
         "服务模式由“服务器”字段决定",
         "只能连接 2.4GHz WiFi",
         "yunkong/设备ID/set、state、online",
+        "%DEFAULT_DEV_ID%（留空自动使用）",
+        "两种模式均自动使用当前设备默认 ID（%DEFAULT_DEV_ID%）",
         "只能使用 1–32 个英文字母、数字、下划线或连字符",
         "不要填写 AccessKey",
         # Nit 2：模式判定是区分大小写的小写子串匹配，文案必须说清

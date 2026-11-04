@@ -85,8 +85,8 @@ static const char provisioningHtml[] PROGMEM = "<!DOCTYPE html><html lang=\"zh-C
               "<input id=\"pwd\" class=\"input\" type=\"text\" name=\"pwd\" placeholder=\"无密码的开放网络可留空\">"
               "<small class=\"help\">填写上面 WiFi 的密码，注意大小写；提交前请再次核对。</small></div>"
               "<div class=\"field\"><label for=\"umsg1\">设备名称 / 设备 ID</label>"
-              "<input id=\"umsg1\" class=\"input\" type=\"text\" name=\"umsg1\" placeholder=\"例如：ykyc001_dev1\">"
-              "<small class=\"help\">两种模式都使用：OneNET 模式时须与平台中已创建的设备名一致；自建 MQTT 模式时用于话题 yunkong/设备ID/set、state、online。只能使用 1–32 个英文字母、数字、下划线或连字符。留空或不合法时，自建模式自动生成 ykyc-芯片ID，OneNET 模式自动使用 ykyc001_dev1。</small></div>"
+              "<input id=\"umsg1\" class=\"input\" type=\"text\" name=\"umsg1\" placeholder=\"例如：%DEFAULT_DEV_ID%（留空自动使用）\">"
+              "<small class=\"help\">两种模式都使用：OneNET 模式时须与平台中已创建的设备名一致；自建 MQTT 模式时用于话题 yunkong/设备ID/set、state、online。只能使用 1–32 个英文字母、数字、下划线或连字符。留空或不合法时，两种模式均自动使用当前设备默认 ID（%DEFAULT_DEV_ID%）。</small></div>"
               "<div class=\"field\"><label for=\"umsg2\">OneNET Token</label>"
               "<input id=\"umsg2\" class=\"input\" type=\"text\" name=\"umsg2\" placeholder=\"粘贴完整的 OneNET Token\">"
               "<small class=\"help\">仅 OneNET AIoT 模式使用。粘贴用 tools/onenet_tool.py 生成的完整 Token（以 version=2018-10-31&amp; 开头）；不要填写 AccessKey。自建 MQTT 模式会忽略此字段，可留空。</small></div>"
@@ -281,7 +281,7 @@ static const char otaIndexHtml[] PROGMEM =
     "var h='<table>';"
     "h+='<tr><td>固件版本</td><td>'+esc(s.fw_version||'—')+' · '+esc(s.build_time||'')+'</td></tr>';"
     "h+='<tr><td>WiFi</td><td>'+(s.wifi_status==3?ok(s.wifi_str):err(s.wifi_str))+'</td></tr>';"
-    "h+='<tr><td>IP</td><td>'+esc(s.ip||'—')+'</td></tr>';"
+    "h+='<tr><td>IP</td><td>'+esc(s.ip||'—')+'</td></tr>';h+='<tr><td>MAC</td><td style=font-size:11px>'+esc(s.mac||'—')+'</td></tr>';"
     "h+='<tr><td>模式</td><td>'+esc(s.mqtt_mode)+'</td></tr>';"
     "h+='<tr><td>MQTT</td><td>'+(s.mqtt_ready?ok('OK'):err('NO'))+'</td></tr>';"
     "h+='<tr><td>NTP</td><td>'+(s.clock_ready?ok('OK'):err('NO'))+'</td></tr>';"
@@ -367,6 +367,7 @@ void handleStatus() {
   json += "\"wifi_status\":" + String(WiFi.status());
   json += ",\"wifi_str\":\"" + String(wifiStatusStr(WiFi.status())) + "\"";
   json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+  json += ",\"mac\":\"" + WiFi.macAddress() + "\"";
   json += ",\"mqtt_ready\":" + String(mqttclient_state == 1 ? "true" : "false");
   json += ",\"clock_ready\":" + String(clockReady ? "true" : "false");
   json += ",\"flag_state\":" + String(flagState == HIGH ? "1" : "0");
@@ -789,11 +790,20 @@ void setup()
 
   Serial.println("Startup YKYC-001");
 
+  uint8_t macBytes[6];
+  WiFi.macAddress(macBytes);
+  char defaultIdBuf[16];
+  ykFormatDeviceIdFromMac(defaultIdBuf, sizeof(defaultIdBuf), macBytes);
+  String defaultDevId = String(defaultIdBuf);
+  Serial.printf("MAC: %s, Default Device ID: %s\n", WiFi.macAddress().c_str(), defaultDevId.c_str());
+
   wifipw.setCompatibleMode(true);
   wifipw.setWiFiTimeOut(10);
   wifipw.useSpaceWiFi(true);
   wifipw.autoStart(true);
-  wifipw.setZDYhtml(String(FPSTR(provisioningHtml)));
+  String customHtml = String(FPSTR(provisioningHtml));
+  customHtml.replace("%DEFAULT_DEV_ID%", defaultDevId);
+  wifipw.setZDYhtml(customHtml);
   wifipw.setNumUMSG(6);
   wifipw.begin();
   wifipw.setOTATimeOut(30);
@@ -820,7 +830,7 @@ void setup()
       Serial.printf("invalid device id '%s', fallback\n", CLIENTID.c_str());
     }
     if (CLIENTID.length() == 0 || !ykDeviceIdValid(CLIENTID.c_str())) {
-      CLIENTID = "ykyc-" + String(ESP.getChipId(), HEX);
+      CLIENTID = defaultDevId;
     }
     Serial.printf("Mode: Custom MQTT -> %s:%d, id=%s\n", MQTT_HOST.c_str(), MQTT_PORT_N, CLIENTID.c_str());
   } else {
@@ -830,7 +840,7 @@ void setup()
       Serial.printf("invalid device id '%s', fallback\n", CLIENTID.c_str());
     }
     if (CLIENTID.length() == 0 || !ykDeviceIdValid(CLIENTID.c_str())) {
-      CLIENTID = "ykyc001_dev1";
+      CLIENTID = defaultDevId;
     }
     if (MQTT_USER.length() == 0) {
       MQTT_USER = "MiXfbNnY6r";

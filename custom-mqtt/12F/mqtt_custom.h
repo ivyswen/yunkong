@@ -81,6 +81,23 @@ static inline bool ykDeviceIdValid(const char* id) {
   return true;
 }
 
+// 格式化基于 MAC 地址后六位的默认设备 ID：ykyc001_xxxxxx（全小写）。
+// mac 为 6 字节 MAC 地址数组，buf 至少 15 字节（"ykyc001_" 8 字节 + 6 字节 hex + 1 字节 '\0' = 15）。
+// 返回写入长度（14），失败返回 -1。
+static inline int ykFormatDeviceIdFromMac(char* buf, size_t bufSize, const uint8_t mac[6]) {
+  if (buf == NULL || mac == NULL || bufSize < 15) {
+    return -1;
+  }
+  int n = snprintf(buf, bufSize, "ykyc001_%02x%02x%02x",
+                   (unsigned int)mac[3],
+                   (unsigned int)mac[4],
+                   (unsigned int)mac[5]);
+  if (n < 0 || (size_t)n >= bufSize) {
+    return -1;
+  }
+  return n;
+}
+
 // 模式判定（与 custom-mqtt/README 一致，判定只此一处）：配网「MQTT 服务器」非空、
 // 且不是 OneNET 云域名 => 自定义（自建 broker）模式；留空或云域名 => OneNET 模式。
 // 与密码、端口无关：匿名 broker、非 1883 端口同样是自定义模式。

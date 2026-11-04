@@ -32,8 +32,10 @@
 由于本仓库是公开的，**严禁在代码、文档或固件中硬编码私有 AccessKey**。用户可在本地终端使用仓库自带的 CLI 工具安全计算 10 年免维护 Token，仅将生成的 Token 填入设备配网页（主密钥 AccessKey 绝不上板，保障账户安全）：
 
 ```bash
-# 1. 设备级 Token（推荐，仅授权特定设备，例如 ykyc001_dev1）
-python tools/onenet_tool.py token --pid MiXfbNnY6r --dev ykyc001_dev1 --key <你的AccessKey>
+# 1. 设备级 Token（推荐：直接传入设备 MAC 或后六位，自动推导 ykyc001_xxxxxx）
+python tools/onenet_tool.py token --pid MiXfbNnY6r --mac AA:BB:CC:1A:2B:3C --key <你的AccessKey>
+# 或直接指定具体设备名称
+python tools/onenet_tool.py token --pid MiXfbNnY6r --dev ykyc001_1a2b3c --key <你的AccessKey>
 
 # 2. 或产品级 Token（该产品下所有插座设备共用，适合批量配网）
 python tools/onenet_tool.py token --pid MiXfbNnY6r --key <你的AccessKey>
@@ -43,7 +45,7 @@ export ONENET_ACCESS_KEY="<你的AccessKey>"
 python tools/onenet_tool.py token --dev ykyc001_dev1
 ```
 
-运行后会输出以 `version=2018-10-31&...` 开头的 Token 字符串。设备刷机后连接其热点（访问 `http://192.168.22.1`），在配网页的「OneNET Token」一栏粘贴此字符串，设备名称填 `ykyc001_dev1`，其余服务器、端口留空即可自动连通 OneNET。
+运行后会输出以 `version=2018-10-31&...` 开头的 Token 字符串。设备刷机后连接其热点（访问 `http://192.168.22.1`），在配网页的「OneNET Token」一栏粘贴此字符串，设备名称可直接留空（配网页动态显示当前设备 MAC 后六位生成的默认 ID，如 `ykyc001_1a2b3c`），其余服务器、端口留空即可自动连通 OneNET。
 
 ## 目录
 
@@ -112,7 +114,7 @@ arduino-cli compile --output-dir ./bin -b 'esp8266:esp8266:generic:xtal=80,vt=fl
 
 上电灯闪 → 手机连「WiFi配网」热点 → 浏览器 192.168.22.1：
 
-- **OneNET AIoT 模式（默认）**：填家里 2.4G WiFi、设备名（`ykyc001_dev1`）、本地生成的 OneNET Token，其余留空
+- **OneNET AIoT 模式（默认）**：填家里 2.4G WiFi、设备名可留空（自动使用 `ykyc001_xxxxxx`，xxxxxx 为 MAC 后六位）、本地生成的 OneNET Token，其余留空
 - **自定义 MQTT 模式**：填家里 2.4G WiFi、设备名，并填入 MQTT 服务器 IP 等字段。⚠️ 服务器栏只填裸 IP 或域名（如 `192.168.88.79`），**切勿带 `mqtt://` 前缀**——固件不解析 URL，带前缀必然连不上（2026-11-03 实测踩坑）
 
 按住按键 3 秒以上松开即清配网重来（按满 10 秒同样有效）。
