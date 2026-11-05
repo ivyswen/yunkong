@@ -11,8 +11,8 @@
 
 | 文件 | 适合 |
 |---|---|
-| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐（插头版 ESP-12F）**。478,480 B，sha256 `10e05f4312f7cb3241f0077eccc1822a27890577f4ae15fe056e867352a0df13`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
-| `bin/ykyc001_v2_custom_mqtt_esp8285.bin` | **86 面板 ESP-M4 版（ESP8285H16）专用**，与上行同一源码、仅 Flash 布局改 2M64。478,432 B，sha256 `8e3ee3d60d83022bb8ac1c0ff8ae7629fec607d543e37ccdd9ad905fa9f169a0`。引脚与插头版一致（原厂 dump 字面量复核 + 继电器 IO14 跨板信号双证）；面板变体内部对调了 LED 引脚定义（灯色与插头版相反，2026-11-05 真机修正）；刷入须 `--flash_size 2MB`，见 FLASHING.md 面板节。**勿与插头版 bin 互刷** |
+| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐（插头版 ESP-12F）**。478,464 B，sha256 `ccd5def978cb8c1e8c44e89acfb2d8a7b4a79c1aa240f4f8b55d59c7bf25b1d9`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
+| `bin/ykyc001_v2_custom_mqtt_esp8285.bin` | **86 面板 ESP-M4 版（ESP8285H16）专用**，与上行同一源码、仅 Flash 布局改 2M64。478,464 B，sha256 `94e78db2c3f263a1b67defa1950e9e0df09bb482aa42c2ea7ecd86f27d3b5f87`。引脚与插头版一致（原厂 dump 字面量复核 + 继电器 IO14 跨板信号双证）；面板变体内部对调了 LED 引脚定义（灯色与插头版相反，2026-11-05 真机修正）；刷入须 `--flash_size 2MB`，见 FLASHING.md 面板节。**勿与插头版 bin 互刷** |
 | `bin/ykyc001_v2_compiled.bin` | 原版最新源码的复现编译，462,896 B（与作者 v2 bin 仅差 16 B 构建信息） |
 | `bin/author/ykyc001_v2_author.bin` | 作者发布的 v2 原版，462,912 B |
 | `bin/ykyc001_v1_compiled.bin` / `bin/author/ykyc001_v1_author.bin` | 第一版（CSDN 源码篇版本），存档 |
