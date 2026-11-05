@@ -418,6 +418,12 @@ static uint32_t otaStartMs = 0;
 static MD5Builder otaRxMd5;
 static uint8_t otaFileModeByte = 0;
 static bool otaModeByteSaved = false;
+// 自计已接收字节数。不能用 upload.totalSize 判断“首块”：WebServer 在
+// WRITE 回调返回之后才把本块计入 totalSize（Parsing-impl.h），首块回调时
+// totalSize=0、currentSize=2048，原判据 totalSize-currentSize==0 实际命中
+// 的是第二块，存下的是文件第 2050 字节而非镜像头模式字节，回读比对时
+// 把它写回 buf[2] => 必然 MD5 不符（2026-11-05 真机两台都 verify FAILED）。
+static uint32_t otaRxBytes = 0;
 static uint32_t otaMaxSpace = 0;
 
 // 暂存区回读校验：暂存地址按内核 Updater::begin 的公式复算——
@@ -479,6 +485,7 @@ void handleOtaUpdateUpload() {
     otaStartMs = millis();
     otaRxMd5.begin();
     otaModeByteSaved = false;
+    otaRxBytes = 0;
     if (!Update.begin(otaMaxSpace)) {
       Serial.printf("OTA begin failed, err=%u\n", Update.getError());
     } else {
@@ -489,10 +496,11 @@ void handleOtaUpdateUpload() {
     {  // 接收侧 MD5 累计（按到达顺序、整块计入），并保存镜像头模式字节
       uint32_t m = upload.currentSize;
       uint8_t* q = upload.buf;
-      if (!otaModeByteSaved && upload.totalSize - upload.currentSize == 0 && m > 2) {
+      if (!otaModeByteSaved && otaRxBytes == 0 && m > 2) {
         otaFileModeByte = q[2];
         otaModeByteSaved = true;
       }
+      otaRxBytes += m;
       while (m > 0) {
         uint16_t step = m > 4096 ? 4096 : (uint16_t)m;
         otaRxMd5.add(q, step);
@@ -522,7 +530,8 @@ void handleOtaUpdateUpload() {
     Serial.printf("OTA end start: total=%u t=%lu\n", upload.totalSize, endStart);
     if (Update.end(true)) {
       otaRxMd5.calculate();
-      if (otaVerifyStaged(upload.totalSize)) {
+      if (otaModeByteSaved && otaRxBytes == upload.totalSize &&
+          otaVerifyStaged(upload.totalSize)) {
         otaUpdateOk = true;
         Serial.printf("OTA uploaded ok: %u bytes, end took %lu ms, restart to apply\n",
                       upload.totalSize, millis() - endStart);

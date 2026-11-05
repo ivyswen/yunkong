@@ -125,6 +125,24 @@ def main() -> None:
         "otaUpdateOk = true"
     ), "只有回读校验通过后才能置成功标志"
 
+    # 第四轮根因（2026-11-05，两台真机均 verify FAILED）：WebServer 在
+    # WRITE 回调返回后才把本块计入 upload.totalSize，首块回调时
+    # totalSize=0，原判据 totalSize-currentSize==0 命中的是第二块，存下
+    # 文件第 2050 字节当模式字节，回读比对必然不符。须用自计字节数判首块。
+    write_branch = upload[upload.index("UPLOAD_FILE_WRITE"):upload.index("UPLOAD_FILE_END")]
+    assert "upload.totalSize - upload.currentSize == 0" not in upload, (
+        "不得以 totalSize-currentSize 判首块（totalSize 在回调后才累加）"
+    )
+    assert "otaRxBytes == 0" in write_branch, "首块判定应基于自计的 otaRxBytes"
+    assert write_branch.index("otaRxBytes == 0") < write_branch.index("otaRxBytes += m"), (
+        "应先判首块再累加字节数"
+    )
+    start_branch = upload[upload.index("UPLOAD_FILE_START"):upload.index("UPLOAD_FILE_WRITE")]
+    assert "otaRxBytes = 0" in start_branch, "每次上传开始应清零 otaRxBytes"
+    assert "otaModeByteSaved && otaRxBytes == upload.totalSize" in end_branch, (
+        "收尾须确认已存模式字节且自计字节数与 totalSize 一致"
+    )
+
     print("own OTA handler (sliced write + wdt feed) contract: OK")
 
 
