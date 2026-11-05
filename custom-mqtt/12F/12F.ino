@@ -42,10 +42,22 @@ WzdhzTYwVkxBaU+xf/2w
 #define KEEPALIVE 15
 
 //***********************主要引脚
+#ifdef BOARD_ESP8285_PANEL
+// 86 面板 ESP-M4 版（build.sh esp8285 变体）：灯色与插头版相反——
+// 2026-11-05 真机：状态「关（红灯）」时实际亮蓝灯。本固件 led()
+// 恒为一脚高、一脚低（选中灯亮/闪、另一灯灭），故对调引脚与整体
+// 反相在现象上严格等价，引脚对调与有效电平相反两种根因下此对调
+// 都成立。继电器方向未经实测，不凭灯的结论推翻（见 FLAG 定义）。
+//蓝灯 GPIO16
+#define LED_B 16
+//红灯 GPIO12
+#define LED_RED 12
+#else
 //蓝灯 GPIO12
 #define LED_B 12
 //红灯 GPIO16
 #define LED_RED 16
+#endif
 //继电器 GPIO14
 #define FLAG 14
 //按钮 GPIO13

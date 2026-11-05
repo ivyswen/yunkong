@@ -33,6 +33,7 @@ fi
 BUILD_TIME="$(date '+%Y-%m-%dT%H:%M')"
 
 VARIANT="${1:-12f}"
+EXTRA_DEFINE=''
 case "$VARIANT" in
   12f)
     EESZ='1M64'
@@ -41,6 +42,7 @@ case "$VARIANT" in
   esp8285)
     EESZ='2M64'
     OUT_BIN='bin/ykyc001_v2_custom_mqtt_esp8285.bin'
+    EXTRA_DEFINE='-DBOARD_ESP8285_PANEL'
     ;;
   *)
     echo "未知变体: ${VARIANT}（可用: 12f | esp8285）" >&2
@@ -55,7 +57,7 @@ trap 'rm -rf "$OUT_DIR"' EXIT
 
 echo "FW version: ${HASH}  build: ${BUILD_TIME}  variant: ${VARIANT} (eesz=${EESZ})"
 "$CLI" compile --warnings all -b "$FQBN" \
-  --build-property "compiler.cpp.extra_flags=-DFW_GIT_HASH=\"${HASH}\" -DFW_BUILD_TIME=\"${BUILD_TIME}\"" \
+  --build-property "compiler.cpp.extra_flags=-DFW_GIT_HASH=\"${HASH}\" -DFW_BUILD_TIME=\"${BUILD_TIME}\" ${EXTRA_DEFINE}" \
   --output-dir "$OUT_DIR" custom-mqtt/12F
 
 cp "$OUT_DIR/12F.ino.bin" "$OUT_BIN"
