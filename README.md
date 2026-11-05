@@ -11,7 +11,8 @@
 
 | 文件 | 适合 |
 |---|---|
-| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐**。478,432 B，sha256 `2de5e6c415d139537fd284fd504a0afafa737d784bfd6aa3204d8cf882359125`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
+| `bin/ykyc001_v2_custom_mqtt.bin` | **推荐（插头版 ESP-12F）**。478,432 B，sha256 `2de5e6c415d139537fd284fd504a0afafa737d784bfd6aa3204d8cf882359125`。支持 OneNET AIoT 物联网融合平台（TLS 8883 加密连接，OneJson 物模型，双向同步按键与云端状态，可在配网页输入 Token，不泄露任何私钥）；配网填 MQTT 服务器则无缝切自有 broker（自建 MQTT） |
+| `bin/ykyc001_v2_custom_mqtt_esp8285.bin` | **86 面板 ESP-M4 版（ESP8285H16）专用**，与上行同一源码、仅 Flash 布局改 2M64。478,432 B，sha256 `150c67db617adecf3f42320b70790c37422d9fffb821510eb270d3dd47fab23e`。引脚与插头版一致（原厂 dump 字面量复核 + 继电器 IO14 跨板信号双证）；刷入须 `--flash_size 2MB`，见 FLASHING.md 面板节。**勿与插头版 bin 互刷** |
 | `bin/ykyc001_v2_compiled.bin` | 原版最新源码的复现编译，462,896 B（与作者 v2 bin 仅差 16 B 构建信息） |
 | `bin/author/ykyc001_v2_author.bin` | 作者发布的 v2 原版，462,912 B |
 | `bin/ykyc001_v1_compiled.bin` / `bin/author/ykyc001_v1_author.bin` | 第一版（CSDN 源码篇版本），存档 |

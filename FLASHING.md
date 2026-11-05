@@ -7,7 +7,8 @@
 | 文件 | 说明 |
 |---|---|
 | ykyc001_v2_compiled.bin | **推荐**。最新版源码（661 行，含延时修复、启动超时修复、本地状态页）本地编译，462,896 B |
-| ykyc001_v2_custom_mqtt.bin | **推荐**。增强版：支持 OneNET AIoT (TLS 8883) + 自建局域网 MQTT，478,432 B |
+| ykyc001_v2_custom_mqtt.bin | **推荐（插头版）**。增强版：支持 OneNET AIoT (TLS 8883) + 自建局域网 MQTT，478,432 B |
+| ykyc001_v2_custom_mqtt_esp8285.bin | **86 面板 ESP-M4 版（ESP8285H16）专用**。同源码、Flash 布局 2M64，478,432 B；刷入用 `--flash_size 2MB`，见下方「面板 ESP-M4 版」节 |
 | ykyc001_v2_author.bin | 作者发布的 v2 原版 bin，462,912 B（与本地编译版仅差 16 B 构建信息，字符串全等） |
 | ykyc001_v1_compiled.bin | CSDN 源码篇版本（381 行）本地编译，457,520 B |
 | ykyc001_v1_author.bin | 作者 v1 原版 bin，477,776 B |
@@ -54,6 +55,22 @@ esptool.py --port COMx --baud 460800 write_flash --flash_mode dout --flash_freq 
 ```
 
 刷完断开 5 脚对 GND 的短接，重新上电（仍用 3.3V 先验证，别急着装壳上市电）。
+
+## 面板 ESP-M4 版（ESP8285H16，86 型墙壁款的第三种硬件版本）
+
+控制板模组丝印 ESP-M4（四博智联，芯片 ESP8285H16、内置 2MB Flash）。
+背面编程焊盘已标注 VCC/RST/GND/G0/RX/TX：CH340G 的 3V3→VCC、
+GND→GND、TXD→RX、RXD→TX，G0 与 GND 短接后上电即下载模式（控制板
+须与电源板分离、全程不接市电）。先整片备份原厂（应满 2,097,152 B）：
+
+```
+esptool.py --port COMx read_flash 0x0 0x200000 ykyc001_stock_backup.bin
+esptool.py --port COMx --baud 460800 write_flash --flash_mode dout --flash_freq 40m --flash_size 2MB 0x00000 ykyc001_v2_custom_mqtt_esp8285.bin
+```
+
+引脚与插头版相同（继电器 GPIO14——也是控制板与电源板之间唯一的
+信号线；蓝灯 12、红灯 16、按键 13），源码共用、仅 Flash 布局不同，
+故有独立 bin；**切勿把插头版 1M64 bin 刷进面板**（布局不符）。
 
 ## 首次配网
 
