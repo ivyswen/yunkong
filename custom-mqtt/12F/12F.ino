@@ -300,6 +300,9 @@ static const char otaIndexHtml[] PROGMEM =
     "h+='<tr><td>NTP</td><td>'+(s.clock_ready?ok('OK'):err('NO'))+'</td></tr>';"
     "h+='<tr><td>继电器</td><td>'+(s.flag_state==1?'开（蓝灯）':'关（红灯）')+'</td></tr>';"
     "h+='<tr><td>设备ID</td><td style=font-size:11px>'+esc(s.clientid||'—')+'</td></tr>';"
+    "h+='<tr><td>运行固件</td><td>0x1000 起 · '+esc(s.sketch_bytes||'—')+' B</td></tr>';"
+    "h+='<tr><td>OTA 暂存</td><td>'+esc(s.ota_offset||'—')+' 起 · '+esc(s.ota_space||'—')+' B 可用</td></tr>';"
+    "h+='<tr><td>Flash</td><td>'+esc(s.flash_bytes||'—')+' B（文件系统 '+esc(s.fs_offset||'—')+' 起）</td></tr>';"
     "h+='</table>';"
     "document.getElementById('status').innerHTML=h;"
     "}catch(e){document.getElementById('status').innerHTML='解析失败'}"
@@ -388,6 +391,20 @@ void handleStatus() {
   json += ",\"mqtt_mode\":\"" + String(customMqtt ? "custom" : "onenet") + "\"";
   json += ",\"fw_version\":\"" + String(FW_GIT_HASH) + "\"";
   json += ",\"build_time\":\"" + String(FW_BUILD_TIME) + "\"";
+  // 分区布局（ESP8266+eboot 无 ESP32 式双执行分区：应用恒在 0x1000
+  // 运行，OTA 镜像先落暂存窗、重启由 eboot 拷回）。暂存窗起点与
+  // otaVerifyStaged 的地址公式同口径（当前固件扇区取整处）。
+  {
+    uint32_t sketchBytes = ESP.getSketchSize();
+    uint32_t freeSpace = ESP.getFreeSketchSpace();
+    uint32_t sketchRounded = (sketchBytes + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
+    uint32_t fsStart = sketchRounded + freeSpace;
+    json += ",\"sketch_bytes\":" + String(sketchBytes);
+    json += ",\"flash_bytes\":" + String(ESP.getFlashChipRealSize());
+    json += ",\"ota_space\":" + String(freeSpace);
+    json += ",\"ota_offset\":\"0x" + String(sketchRounded, HEX) + "\"";
+    json += ",\"fs_offset\":\"0x" + String(fsStart, HEX) + "\"";
+  }
   json += ",\"reconnect_delay_ms\":" + String(mqttReconnectDelayMs);
   json += "}";
   OTAserver.sendHeader("Access-Control-Allow-Origin", "*");
