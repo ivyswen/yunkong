@@ -7,8 +7,8 @@
 | 文件 | 说明 |
 |---|---|
 | ykyc001_v2_compiled.bin | **推荐**。最新版源码（661 行，含延时修复、启动超时修复、本地状态页）本地编译，462,896 B |
-| ykyc001_v2_custom_mqtt.bin | **推荐（插头版）**。增强版：支持 OneNET AIoT (TLS 8883) + 自建局域网 MQTT，478,464 B |
-| ykyc001_v2_custom_mqtt_esp8285.bin | **86 面板 ESP-M4 版（ESP8285H16）专用**。同源码、Flash 布局 2M64，478,464 B；刷入用 `--flash_size 2MB`，见下方「面板 ESP-M4 版」节 |
+| ykyc001_v2_custom_mqtt.bin | **推荐（插头版）**。增强版：支持 OneNET AIoT (TLS 8883) + 自建局域网 MQTT，479,152 B |
+| ykyc001_v2_custom_mqtt_esp8285.bin | **86 面板 ESP-M4 版（ESP8285H16）专用**。同源码、Flash 布局 2M64，479,152 B；刷入用 `--flash_size 2MB`，见下方「面板 ESP-M4 版」节 |
 | ykyc001_v2_author.bin | 作者发布的 v2 原版 bin，462,912 B（与本地编译版仅差 16 B 构建信息，字符串全等） |
 | ykyc001_v1_compiled.bin | CSDN 源码篇版本（381 行）本地编译，457,520 B |
 | ykyc001_v1_author.bin | 作者 v1 原版 bin，477,776 B |
